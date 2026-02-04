@@ -43,6 +43,22 @@ const bestScore = document.querySelector("#best-score");
 const leaderboardList = document.querySelector("#leaderboard-list");
 const restartMissionButton = document.querySelector("#restart-mission");
 const backToMenuButton = document.querySelector("#back-to-menu");
+const onlinePanel = document.querySelector("#online-panel");
+const onlineNameInput = document.querySelector("#online-name");
+const saveOnlineNameButton = document.querySelector("#save-online-name");
+const onlineNameStatus = document.querySelector("#online-name-status");
+const createRoomNameInput = document.querySelector("#room-name");
+const createRoomRegionSelect = document.querySelector("#room-region");
+const createRoomPrivacySelect = document.querySelector("#room-privacy");
+const createRoomSizeSelect = document.querySelector("#room-size");
+const createRoomButton = document.querySelector("#create-room");
+const createRoomStatus = document.querySelector("#create-room-status");
+const joinRoomInput = document.querySelector("#join-code");
+const joinRoomButton = document.querySelector("#join-room");
+const joinRoomStatus = document.querySelector("#join-room-status");
+const roomList = document.querySelector("#room-list");
+const activeRoomPanel = document.querySelector("#active-room-panel");
+const refreshRoomsButton = document.querySelector("#refresh-rooms");
 
 const WORLD = {
   width: canvas.width,
@@ -71,11 +87,11 @@ const GAME_MODES = {
   },
   online: {
     label: "En ligne",
-    description: "Batailles classées synchronisées (à venir).",
-    objective: "Mode en préparation : testez la stabilité réseau.",
+    description: "Créez ou rejoignez un salon, invitez votre escouade et configurez la partie.",
+    objective: "Gérez votre salon avant de lancer la mission.",
     enemyCount: 4,
     waves: 2,
-    systems: "Synchronisation en file d'attente",
+    systems: "Salons persistants, codes d'invitation, paramètres de match",
     scoreMultiplier: 1.5,
   },
 };
@@ -191,6 +207,7 @@ const bullets = [];
 const particles = [];
 
 const STORAGE_KEY = "tank-arena-profile";
+const ONLINE_STORAGE_KEY = "tank-arena-online";
 const MAX_LEADERBOARD = 5;
 
 const input = {
@@ -218,6 +235,32 @@ const DEFAULT_PROFILE = {
   leaderboard: [],
 };
 
+const DEFAULT_ONLINE_STATE = {
+  playerName: "",
+  rooms: [],
+  activeRoomId: null,
+};
+
+function loadOnlineState() {
+  try {
+    const stored = localStorage.getItem(ONLINE_STORAGE_KEY);
+    if (!stored) return JSON.parse(JSON.stringify(DEFAULT_ONLINE_STATE));
+    const parsed = JSON.parse(stored);
+    return {
+      ...JSON.parse(JSON.stringify(DEFAULT_ONLINE_STATE)),
+      ...parsed,
+      rooms: Array.isArray(parsed.rooms) ? parsed.rooms : [],
+    };
+  } catch (error) {
+    console.warn("Online state load error", error);
+    return JSON.parse(JSON.stringify(DEFAULT_ONLINE_STATE));
+  }
+}
+
+function saveOnlineState() {
+  localStorage.setItem(ONLINE_STORAGE_KEY, JSON.stringify(onlineState));
+}
+
 function loadProfile() {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
@@ -240,6 +283,201 @@ function saveProfile() {
 }
 
 const profile = loadProfile();
+const onlineState = loadOnlineState();
+
+function sanitizeName(value, fallback) {
+  const trimmed = value.trim();
+  if (!trimmed) return fallback;
+  return trimmed.slice(0, 18);
+}
+
+function setStatusMessage(element, message, status) {
+  if (!element) return;
+  element.textContent = message;
+  element.classList.remove("is-error", "is-success");
+  if (status) {
+    element.classList.add(status === "error" ? "is-error" : "is-success");
+  }
+}
+
+function getPlayerName() {
+  if (!onlineState.playerName) {
+    onlineState.playerName = `Pilote-${Math.floor(100 + Math.random() * 900)}`;
+    saveOnlineState();
+  }
+  return onlineState.playerName;
+}
+
+function updatePlayerName(newName) {
+  const fallback = getPlayerName();
+  const sanitized = sanitizeName(newName, fallback);
+  if (sanitized === onlineState.playerName) {
+    setStatusMessage(onlineNameStatus, "Nom d'appel confirmé.", "success");
+    return;
+  }
+  const oldName = onlineState.playerName;
+  onlineState.playerName = sanitized;
+  onlineState.rooms.forEach((room) => {
+    room.players = room.players.map((player) => (player === oldName ? sanitized : player));
+    if (room.host === oldName) {
+      room.host = sanitized;
+    }
+  });
+  saveOnlineState();
+  setStatusMessage(onlineNameStatus, "Nom d'appel mis à jour.", "success");
+  renderOnlinePanel();
+}
+
+function generateRoomCode() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let code = "";
+  for (let i = 0; i < 6; i += 1) {
+    code += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return code;
+}
+
+function getRoomById(roomId) {
+  return onlineState.rooms.find((room) => room.id === roomId) || null;
+}
+
+function getRoomByCode(code) {
+  const normalized = code.trim().toUpperCase();
+  return onlineState.rooms.find((room) => room.code === normalized) || null;
+}
+
+function setActiveRoom(roomId) {
+  onlineState.activeRoomId = roomId;
+  saveOnlineState();
+  renderOnlinePanel();
+}
+
+function getActiveRoom() {
+  return onlineState.activeRoomId ? getRoomById(onlineState.activeRoomId) : null;
+}
+
+function setRoomStatus(roomId, status) {
+  const room = getRoomById(roomId);
+  if (!room) return;
+  room.status = status;
+  saveOnlineState();
+  renderOnlinePanel();
+}
+
+function leaveRoom(roomId, silent = false) {
+  const room = getRoomById(roomId);
+  if (!room) return;
+  const playerName = getPlayerName();
+  room.players = room.players.filter((player) => player !== playerName);
+  if (room.host === playerName) {
+    room.host = room.players[0] || null;
+  }
+  if (room.players.length === 0) {
+    onlineState.rooms = onlineState.rooms.filter((item) => item.id !== roomId);
+  }
+  if (onlineState.activeRoomId === roomId) {
+    onlineState.activeRoomId = null;
+  }
+  saveOnlineState();
+  if (!silent) {
+    setStatusMessage(joinRoomStatus, "Vous avez quitté le salon.", "success");
+  }
+  renderOnlinePanel();
+}
+
+function ensureRoomCodeUnique(code) {
+  return !onlineState.rooms.some((room) => room.code === code);
+}
+
+function createRoom() {
+  const hostName = getPlayerName();
+  const name = sanitizeName(createRoomNameInput.value || "Salon tactique", "Salon tactique");
+  const region = createRoomRegionSelect.value;
+  const privacy = createRoomPrivacySelect.value;
+  const maxPlayers = Number.parseInt(createRoomSizeSelect.value, 10);
+  let code = generateRoomCode();
+  while (!ensureRoomCodeUnique(code)) {
+    code = generateRoomCode();
+  }
+  if (onlineState.activeRoomId) {
+    leaveRoom(onlineState.activeRoomId, true);
+  }
+  const room = {
+    id: `room-${Date.now()}`,
+    code,
+    name,
+    region,
+    privacy,
+    maxPlayers,
+    host: hostName,
+    players: [hostName],
+    status: "Ouvert",
+    createdAt: Date.now(),
+  };
+  onlineState.rooms.unshift(room);
+  onlineState.activeRoomId = room.id;
+  saveOnlineState();
+  createRoomNameInput.value = "";
+  setStatusMessage(createRoomStatus, `Salon créé. Code: ${code}`, "success");
+  renderOnlinePanel();
+}
+
+function joinRoomByCode(codeInput) {
+  const code = codeInput.trim().toUpperCase();
+  if (!code) {
+    setStatusMessage(joinRoomStatus, "Entrez un code valide.", "error");
+    return;
+  }
+  const room = getRoomByCode(code);
+  if (!room) {
+    setStatusMessage(joinRoomStatus, "Aucun salon trouvé avec ce code.", "error");
+    return;
+  }
+  if (room.players.length >= room.maxPlayers) {
+    setStatusMessage(joinRoomStatus, "Salon complet.", "error");
+    return;
+  }
+  const playerName = getPlayerName();
+  if (!room.players.includes(playerName)) {
+    room.players.push(playerName);
+  }
+  if (onlineState.activeRoomId && onlineState.activeRoomId !== room.id) {
+    leaveRoom(onlineState.activeRoomId, true);
+  }
+  onlineState.activeRoomId = room.id;
+  saveOnlineState();
+  setStatusMessage(joinRoomStatus, `Connecté au salon ${room.name}.`, "success");
+  joinRoomInput.value = "";
+  renderOnlinePanel();
+}
+
+function updateRoomSettings(roomId, settings) {
+  const room = getRoomById(roomId);
+  if (!room) return;
+  if (room.host !== getPlayerName()) {
+    setStatusMessage(createRoomStatus, "Seul l'hôte peut modifier le salon.", "error");
+    return;
+  }
+  if (settings.maxPlayers && settings.maxPlayers < room.players.length) {
+    setStatusMessage(createRoomStatus, "Impossible de réduire sous l'effectif actuel.", "error");
+    return;
+  }
+  Object.assign(room, settings);
+  saveOnlineState();
+  setStatusMessage(createRoomStatus, "Salon mis à jour.", "success");
+  renderOnlinePanel();
+}
+
+function copyToClipboard(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(
+      () => setStatusMessage(joinRoomStatus, "Code copié dans le presse-papiers.", "success"),
+      () => setStatusMessage(joinRoomStatus, "Copie impossible. Retapez le code.", "error")
+    );
+  } else {
+    setStatusMessage(joinRoomStatus, "Copie automatique indisponible.", "error");
+  }
+}
 
 const gameState = {
   phase: "menu",
@@ -792,6 +1030,8 @@ function setMode(modeKey) {
   `;
   setActiveButton(modeButtons, modeKey);
   updateShop();
+  renderOnlinePanel();
+  updateStartMissionButton();
 }
 
 function spawnEnemies(count) {
@@ -877,6 +1117,12 @@ function toggleHudVisibility() {
 
 function startLoading() {
   setPhase("loading");
+  if (gameState.mode === "online") {
+    const activeRoom = getActiveRoom();
+    if (activeRoom) {
+      setRoomStatus(activeRoom.id, "Briefing");
+    }
+  }
   const messages = [
     "Calibration des moteurs...",
     "Synchronisation des capteurs...",
@@ -906,6 +1152,12 @@ function startLoading() {
 
 function startMatch() {
   setPhase("playing");
+  if (gameState.mode === "online") {
+    const activeRoom = getActiveRoom();
+    if (activeRoom) {
+      setRoomStatus(activeRoom.id, "En mission");
+    }
+  }
   if (!profile.ownedTanks.includes(selectedTank)) {
     selectedTank = "scout";
   }
@@ -931,6 +1183,12 @@ function finishMatch(summary) {
   if (gameState.mode === "bot-battle") {
     updateLeaderboard(gameState.score);
   }
+  if (gameState.mode === "online") {
+    const activeRoom = getActiveRoom();
+    if (activeRoom) {
+      setRoomStatus(activeRoom.id, "Ouvert");
+    }
+  }
   endSummary.textContent = summary;
   endScore.textContent = gameState.score;
   bestScore.textContent = profile.bestScore;
@@ -940,6 +1198,12 @@ function finishMatch(summary) {
 
 function returnToMenu() {
   setPhase("menu");
+  if (gameState.mode === "online") {
+    const activeRoom = getActiveRoom();
+    if (activeRoom) {
+      setRoomStatus(activeRoom.id, "Ouvert");
+    }
+  }
   gameState.score = 0;
   gameState.wave = 1;
   gameState.energy = 1;
@@ -1198,6 +1462,199 @@ function updateShop() {
   });
 }
 
+function formatRoomPrivacy(privacy) {
+  return privacy === "private" ? "Privé" : "Public";
+}
+
+function updateStartMissionButton() {
+  if (gameState.mode !== "online") {
+    startMissionButton.textContent = "Lancer la mission";
+    startMissionButton.disabled = false;
+    return;
+  }
+  const activeRoom = getActiveRoom();
+  startMissionButton.textContent = activeRoom ? "Lancer la mission en ligne" : "Créer ou rejoindre un salon";
+  startMissionButton.disabled = !activeRoom;
+}
+
+function renderRoomList() {
+  if (!roomList) return;
+  roomList.innerHTML = "";
+  const sortedRooms = [...onlineState.rooms].sort((a, b) => b.createdAt - a.createdAt);
+  if (!sortedRooms.length) {
+    const empty = document.createElement("p");
+    empty.className = "online-empty";
+    empty.textContent = "Aucun salon actif pour le moment.";
+    roomList.appendChild(empty);
+    return;
+  }
+  sortedRooms.forEach((room) => {
+    const card = document.createElement("div");
+    card.className = "room-card";
+    const meta = document.createElement("div");
+    meta.className = "room-meta";
+    const title = document.createElement("strong");
+    title.textContent = room.name;
+    const status = document.createElement("span");
+    status.className = "room-status";
+    status.textContent = `${room.status} · ${room.players.length}/${room.maxPlayers}`;
+    const tags = document.createElement("div");
+    tags.className = "room-tags";
+    tags.innerHTML = `<span>${room.region}</span><span>${formatRoomPrivacy(room.privacy)}</span><span>${room.code}</span>`;
+    meta.append(title, status, tags);
+    const action = document.createElement("button");
+    if (onlineState.activeRoomId === room.id) {
+      action.textContent = "Actif";
+      action.disabled = true;
+    } else {
+      action.textContent = "Rejoindre";
+      action.addEventListener("click", () => joinRoomByCode(room.code));
+    }
+    card.append(meta, action);
+    roomList.appendChild(card);
+  });
+}
+
+function renderActiveRoom() {
+  if (!activeRoomPanel) return;
+  activeRoomPanel.innerHTML = "";
+  const room = getActiveRoom();
+  if (!room) {
+    const empty = document.createElement("p");
+    empty.className = "online-empty";
+    empty.textContent = "Sélectionnez un salon pour voir ses détails et inviter votre escouade.";
+    activeRoomPanel.appendChild(empty);
+    return;
+  }
+
+  const isHost = room.host === getPlayerName();
+  activeRoomPanel.innerHTML = `
+    <div class="online-section-header">
+      <div>
+        <h3>${room.name}</h3>
+        <p class="room-status">${room.status} · ${room.region} · ${formatRoomPrivacy(room.privacy)}</p>
+      </div>
+      <div class="room-actions">
+        ${isHost ? '<button class="ghost-button" id="close-room" type="button">Fermer le salon</button>' : ""}
+        <button class="ghost-button" id="leave-room" type="button">Quitter</button>
+      </div>
+    </div>
+    <div class="room-details">
+      <div class="room-info">
+        <div>
+          <strong>Code d'invitation</strong>
+          <div class="room-actions">
+            <span class="code-chip">${room.code}</span>
+            <button id="copy-room-code" type="button">Copier</button>
+          </div>
+        </div>
+        <div><strong>Hôte</strong> ${room.host || "—"}</div>
+        <div><strong>Places</strong> ${room.players.length}/${room.maxPlayers}</div>
+      </div>
+      <div class="room-players">
+        <h4>Équipage</h4>
+        <ul>
+          ${room.players
+            .map((player) => {
+              const badge = player === room.host ? '<span class="role-badge">Hôte</span>' : "";
+              return `<li>${player} ${badge}</li>`;
+            })
+            .join("")}
+        </ul>
+      </div>
+    </div>
+    ${
+      isHost
+        ? `
+      <div class="online-card">
+        <h3>Configuration du salon</h3>
+        <label class="field">
+          <span>Nom du salon</span>
+          <input id="edit-room-name" type="text" value="${room.name}" maxlength="24" />
+        </label>
+        <div class="field-row">
+          <label class="field">
+            <span>Région</span>
+            <select id="edit-room-region">
+              <option value="EU-Ouest" ${room.region === "EU-Ouest" ? "selected" : ""}>EU-Ouest</option>
+              <option value="EU-Est" ${room.region === "EU-Est" ? "selected" : ""}>EU-Est</option>
+              <option value="US-Est" ${room.region === "US-Est" ? "selected" : ""}>US-Est</option>
+              <option value="US-Ouest" ${room.region === "US-Ouest" ? "selected" : ""}>US-Ouest</option>
+              <option value="Asie" ${room.region === "Asie" ? "selected" : ""}>Asie</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Confidentialité</span>
+            <select id="edit-room-privacy">
+              <option value="public" ${room.privacy === "public" ? "selected" : ""}>Public</option>
+              <option value="private" ${room.privacy === "private" ? "selected" : ""}>Privé</option>
+            </select>
+          </label>
+        </div>
+        <label class="field">
+          <span>Nombre de places</span>
+          <select id="edit-room-size">
+            ${[2, 3, 4, 5, 6]
+              .map((size) => `<option value="${size}" ${room.maxPlayers === size ? "selected" : ""}>${size}</option>`)
+              .join("")}
+          </select>
+        </label>
+        <button id="save-room-settings" type="button">Enregistrer les paramètres</button>
+      </div>
+      `
+        : `<p class="online-hint">Seul l'hôte peut modifier la configuration du salon.</p>`
+    }
+  `;
+
+  const copyButton = activeRoomPanel.querySelector("#copy-room-code");
+  if (copyButton) {
+    copyButton.addEventListener("click", () => copyToClipboard(room.code));
+  }
+
+  const leaveButton = activeRoomPanel.querySelector("#leave-room");
+  if (leaveButton) {
+    leaveButton.addEventListener("click", () => leaveRoom(room.id));
+  }
+
+  const closeButton = activeRoomPanel.querySelector("#close-room");
+  if (closeButton) {
+    closeButton.addEventListener("click", () => {
+      onlineState.rooms = onlineState.rooms.filter((item) => item.id !== room.id);
+      onlineState.activeRoomId = null;
+      saveOnlineState();
+      setStatusMessage(joinRoomStatus, "Salon fermé.", "success");
+      renderOnlinePanel();
+    });
+  }
+
+  const saveSettingsButton = activeRoomPanel.querySelector("#save-room-settings");
+  if (saveSettingsButton) {
+    saveSettingsButton.addEventListener("click", () => {
+      const updatedName = sanitizeName(activeRoomPanel.querySelector("#edit-room-name").value, room.name);
+      const updatedRegion = activeRoomPanel.querySelector("#edit-room-region").value;
+      const updatedPrivacy = activeRoomPanel.querySelector("#edit-room-privacy").value;
+      const updatedMaxPlayers = Number.parseInt(activeRoomPanel.querySelector("#edit-room-size").value, 10);
+      updateRoomSettings(room.id, {
+        name: updatedName,
+        region: updatedRegion,
+        privacy: updatedPrivacy,
+        maxPlayers: updatedMaxPlayers,
+      });
+    });
+  }
+}
+
+function renderOnlinePanel() {
+  if (!onlinePanel) return;
+  const isOnline = gameState.mode === "online";
+  onlinePanel.classList.toggle("is-active", isOnline);
+  if (!isOnline) return;
+  onlineNameInput.value = getPlayerName();
+  renderRoomList();
+  renderActiveRoom();
+  updateStartMissionButton();
+}
+
 modeButtons.forEach((button) => {
   button.addEventListener("click", () => {
     setMode(button.dataset.mode);
@@ -1206,6 +1663,13 @@ modeButtons.forEach((button) => {
 
 startMissionButton.addEventListener("click", () => {
   if (gameState.phase === "menu") {
+    if (gameState.mode === "online") {
+      const activeRoom = getActiveRoom();
+      if (!activeRoom) {
+        setStatusMessage(joinRoomStatus, "Créez ou rejoignez un salon avant de lancer la mission.", "error");
+        return;
+      }
+    }
     startLoading();
   }
 });
@@ -1245,6 +1709,38 @@ hangarTabs.forEach((button) => {
     setHangarTab(button.dataset.tab);
   });
 });
+
+if (saveOnlineNameButton) {
+  saveOnlineNameButton.addEventListener("click", () => {
+    updatePlayerName(onlineNameInput.value);
+  });
+}
+
+if (createRoomButton) {
+  createRoomButton.addEventListener("click", () => {
+    createRoom();
+  });
+}
+
+if (joinRoomButton) {
+  joinRoomButton.addEventListener("click", () => {
+    joinRoomByCode(joinRoomInput.value);
+  });
+}
+
+if (joinRoomInput) {
+  joinRoomInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      joinRoomByCode(joinRoomInput.value);
+    }
+  });
+}
+
+if (refreshRoomsButton) {
+  refreshRoomsButton.addEventListener("click", () => {
+    renderRoomList();
+  });
+}
 
 tankButtons.forEach((button) => {
   button.addEventListener("click", () => {

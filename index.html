@@ -31,12 +31,80 @@
               </button>
               <button class="mode-card" data-mode="online">
                 <span class="mode-title">En ligne</span>
-                <span class="mode-desc">Batailles classées, synchronisation réseau (à venir).</span>
+                <span class="mode-desc">Salons, invitations par code et configuration des matchs.</span>
               </button>
             </div>
             <div class="menu-footer">
               <div class="menu-info" id="mode-details"></div>
               <button class="menu-cta" id="start-mission">Lancer la mission</button>
+            </div>
+            <div class="online-panel" id="online-panel" aria-live="polite">
+              <div class="online-grid">
+                <div class="online-card">
+                  <h3>Profil opérateur</h3>
+                  <label class="field">
+                    <span>Nom d'appel</span>
+                    <input id="online-name" type="text" maxlength="18" autocomplete="nickname" />
+                  </label>
+                  <button id="save-online-name" type="button">Enregistrer</button>
+                  <p class="online-hint" id="online-name-status"></p>
+                </div>
+                <div class="online-card">
+                  <h3>Créer un salon</h3>
+                  <label class="field">
+                    <span>Nom du salon</span>
+                    <input id="room-name" type="text" maxlength="24" placeholder="Escouade Alpha" />
+                  </label>
+                  <div class="field-row">
+                    <label class="field">
+                      <span>Région</span>
+                      <select id="room-region">
+                        <option value="EU-Ouest">EU-Ouest</option>
+                        <option value="EU-Est">EU-Est</option>
+                        <option value="US-Est">US-Est</option>
+                        <option value="US-Ouest">US-Ouest</option>
+                        <option value="Asie">Asie</option>
+                      </select>
+                    </label>
+                    <label class="field">
+                      <span>Confidentialité</span>
+                      <select id="room-privacy">
+                        <option value="public">Public</option>
+                        <option value="private">Privé</option>
+                      </select>
+                    </label>
+                  </div>
+                  <label class="field">
+                    <span>Nombre de places</span>
+                    <select id="room-size">
+                      <option value="2">2</option>
+                      <option value="3">3</option>
+                      <option value="4" selected>4</option>
+                      <option value="5">5</option>
+                      <option value="6">6</option>
+                    </select>
+                  </label>
+                  <button id="create-room" type="button">Créer le salon</button>
+                  <p class="online-hint" id="create-room-status"></p>
+                </div>
+                <div class="online-card">
+                  <h3>Rejoindre via code</h3>
+                  <label class="field">
+                    <span>Code d'invitation</span>
+                    <input id="join-code" type="text" maxlength="8" placeholder="ABCD12" />
+                  </label>
+                  <button id="join-room" type="button">Rejoindre</button>
+                  <p class="online-hint" id="join-room-status"></p>
+                </div>
+              </div>
+              <div class="online-room-list">
+                <div class="online-section-header">
+                  <h3>Salons disponibles</h3>
+                  <button class="ghost-button" id="refresh-rooms" type="button">Actualiser</button>
+                </div>
+                <div id="room-list" class="room-list"></div>
+              </div>
+              <div class="online-room-detail" id="active-room-panel"></div>
             </div>
           </div>
         </div>
