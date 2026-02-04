@@ -8,69 +8,9 @@
   </head>
   <body>
     <main class="layout">
-      <section class="panel">
-        <h1>Tank Arena</h1>
-        <p class="subtitle">
-          Prototype HTML5 Canvas : sélectionne un tank, une arme et tiens le terrain.
-        </p>
-        <div class="controls">
-          <div>
-            <h2>Tank</h2>
-            <div class="button-row" id="tank-options">
-              <button data-tank="scout" class="is-active">Scout</button>
-              <button data-tank="brute">Brute</button>
-              <button data-tank="striker">Striker</button>
-              <button data-tank="bastion">Bastion</button>
-            </div>
-          </div>
-          <div>
-            <h2>Arme</h2>
-            <div class="button-row" id="weapon-options">
-              <button data-weapon="cannon" class="is-active">Canon</button>
-              <button data-weapon="scatter">Scatter</button>
-              <button data-weapon="lancer">Lancer</button>
-              <button data-weapon="burst">Burst</button>
-            </div>
-          </div>
-          <div>
-            <h2>Commandes</h2>
-            <ul class="legend">
-              <li>Déplacement : ZQSD / WASD / Flèches</li>
-              <li>Tirer : Espace</li>
-              <li>Changer d'arme : 1 / 2 / 3 / 4</li>
-              <li>Pause / reprise : Échap</li>
-              <li>Changer de tank : boutons ci-dessus</li>
-            </ul>
-          </div>
-          <div>
-            <h2>Armurerie</h2>
-            <div class="shop-panel">
-              <div class="shop-balance">
-                <span>Crédits</span>
-                <strong id="cash-balance">0</strong>
-              </div>
-              <div class="shop-group">
-                <p class="shop-title">Tanks</p>
-                <div class="shop-grid" id="tank-shop"></div>
-              </div>
-              <div class="shop-group">
-                <p class="shop-title">Armes</p>
-                <div class="shop-grid" id="weapon-shop"></div>
-              </div>
-              <div class="shop-group">
-                <p class="shop-title">Munitions</p>
-                <div class="shop-grid" id="ammo-shop"></div>
-              </div>
-              <div class="shop-group">
-                <p class="shop-title">Améliorations de tank</p>
-                <div class="shop-grid" id="upgrade-shop"></div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
       <section class="game-wrapper">
         <canvas id="game" width="960" height="600" aria-label="Jeu de tank"></canvas>
+        <button class="hud-toggle" id="open-hangar" type="button">Hangar &amp; Boutique</button>
         <div class="game-overlay menu" id="main-menu">
           <div class="menu-frame">
             <div class="menu-header">
@@ -209,6 +149,85 @@
                 <p class="hud-label">Crédits</p>
                 <p class="hud-value" id="hud-cash">0</p>
               </div>
+            </div>
+          </div>
+        </div>
+        <div class="game-overlay hangar" id="hangar-panel" aria-modal="true" role="dialog">
+          <div class="menu-frame hangar-frame">
+            <div class="menu-header">
+              <p class="menu-kicker">Centre tactique</p>
+              <h2>Interface de bord</h2>
+              <p class="menu-subtitle">
+                Ajustez votre tank, achetez des améliorations et consultez les commandes sans quitter la zone de combat.
+              </p>
+            </div>
+            <div class="hangar-tabs" role="tablist">
+              <button class="hangar-tab is-active" data-tab="loadout" role="tab" type="button">Loadout</button>
+              <button class="hangar-tab" data-tab="shop" role="tab" type="button">Armurerie</button>
+              <button class="hangar-tab" data-tab="controls" role="tab" type="button">Commandes</button>
+            </div>
+            <div class="hangar-body">
+              <section class="hangar-section is-active" data-tab="loadout" role="tabpanel">
+                <div class="controls">
+                  <div>
+                    <h2>Tank</h2>
+                    <div class="button-row" id="tank-options">
+                      <button data-tank="scout" class="is-active">Scout</button>
+                      <button data-tank="brute">Brute</button>
+                      <button data-tank="striker">Striker</button>
+                      <button data-tank="bastion">Bastion</button>
+                    </div>
+                  </div>
+                  <div>
+                    <h2>Arme</h2>
+                    <div class="button-row" id="weapon-options">
+                      <button data-weapon="cannon" class="is-active">Canon</button>
+                      <button data-weapon="scatter">Scatter</button>
+                      <button data-weapon="lancer">Lancer</button>
+                      <button data-weapon="burst">Burst</button>
+                    </div>
+                  </div>
+                </div>
+              </section>
+              <section class="hangar-section" data-tab="shop" role="tabpanel">
+                <div class="shop-panel">
+                  <div class="shop-balance">
+                    <span>Crédits</span>
+                    <strong id="cash-balance">0</strong>
+                  </div>
+                  <div class="shop-group">
+                    <p class="shop-title">Tanks</p>
+                    <div class="shop-grid" id="tank-shop"></div>
+                  </div>
+                  <div class="shop-group">
+                    <p class="shop-title">Armes</p>
+                    <div class="shop-grid" id="weapon-shop"></div>
+                  </div>
+                  <div class="shop-group">
+                    <p class="shop-title">Munitions</p>
+                    <div class="shop-grid" id="ammo-shop"></div>
+                  </div>
+                  <div class="shop-group">
+                    <p class="shop-title">Améliorations de tank</p>
+                    <div class="shop-grid" id="upgrade-shop"></div>
+                  </div>
+                </div>
+              </section>
+              <section class="hangar-section" data-tab="controls" role="tabpanel">
+                <div class="controls">
+                  <h2>Commandes</h2>
+                  <ul class="legend">
+                    <li>Déplacement : ZQSD / WASD / Flèches</li>
+                    <li>Tirer : Espace</li>
+                    <li>Changer d'arme : 1 / 2 / 3 / 4</li>
+                    <li>Pause / reprise : Échap</li>
+                    <li>Ouvrir le hangar : bouton "Hangar &amp; Boutique"</li>
+                  </ul>
+                </div>
+              </section>
+            </div>
+            <div class="menu-actions">
+              <button class="menu-cta ghost" id="close-hangar" type="button">Retour au jeu</button>
             </div>
           </div>
         </div>
