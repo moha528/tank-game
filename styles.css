@@ -204,6 +204,11 @@ canvas {
   pointer-events: auto;
 }
 
+.game-overlay.menu .menu-frame {
+  max-height: min(88vh, 760px);
+  overflow-y: auto;
+}
+
 .menu-frame {
   width: min(720px, 100%);
   background: rgba(17, 22, 33, 0.92);
@@ -278,6 +283,7 @@ canvas {
   display: none;
   flex-direction: column;
   gap: 20px;
+  overflow-x: hidden;
 }
 
 .online-panel.is-active {
@@ -312,7 +318,8 @@ canvas {
 }
 
 .field input,
-.field select {
+.field select,
+.field textarea {
   background: rgba(23, 30, 44, 0.9);
   border-radius: 10px;
   border: 1px solid transparent;
@@ -322,9 +329,16 @@ canvas {
 }
 
 .field input:focus,
-.field select:focus {
+.field select:focus,
+.field textarea:focus {
   outline: none;
   border-color: rgba(122, 162, 255, 0.8);
+}
+
+.field textarea {
+  min-height: 90px;
+  resize: vertical;
+  font-family: "Inter", "Segoe UI", system-ui, sans-serif;
 }
 
 .field-row {
@@ -746,5 +760,20 @@ canvas {
     top: 12px;
     right: 12px;
     padding: 8px 14px;
+  }
+}
+
+@media (max-width: 720px) {
+  .menu-frame {
+    padding: 20px;
+  }
+
+  .menu-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .online-grid {
+    grid-template-columns: 1fr;
   }
 }
