@@ -29,14 +29,6 @@
             </div>
           </div>
           <div>
-            <h2>Mode de jeu</h2>
-            <div class="button-row" id="mode-options">
-              <button data-mode="sandbox" class="is-active">Entraînement</button>
-              <button data-mode="bots">Combat bot</button>
-              <button data-mode="online">En ligne</button>
-            </div>
-          </div>
-          <div>
             <h2>Commandes</h2>
             <ul class="legend">
               <li>Déplacement : ZQSD / WASD / Flèches</li>
@@ -52,41 +44,6 @@
         <div class="hud" id="hud"></div>
       </section>
     </main>
-
-    <div class="overlay" id="main-menu" aria-hidden="false">
-      <div class="overlay-card">
-        <p class="eyebrow">Tank Arena</p>
-        <h2>Menu principal</h2>
-        <p class="overlay-text">
-          Choisis un mode de jeu et lance une session pour tester le prototype.
-        </p>
-        <div class="menu-grid">
-          <button class="menu-button" data-start="sandbox">
-            <span>Entraînement</span>
-            <small>Exploration libre &amp; tir sur cible</small>
-          </button>
-          <button class="menu-button" data-start="bots">
-            <span>Combat bot</span>
-            <small>Affronte des ennemis IA</small>
-          </button>
-          <button class="menu-button" data-start="online" disabled>
-            <span>En ligne</span>
-            <small>Mode réseau (bientôt)</small>
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <div class="overlay overlay-loading" id="loading-screen" aria-hidden="true">
-      <div class="loading-card">
-        <div class="spinner"></div>
-        <p>Chargement du champ de bataille...</p>
-        <div class="loading-bar">
-          <div class="loading-progress" id="loading-progress"></div>
-        </div>
-      </div>
-    </div>
-
     <script type="module" src="js/game.js"></script>
   </body>
 </html>

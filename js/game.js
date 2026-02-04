@@ -3,11 +3,6 @@ const ctx = canvas.getContext("2d");
 const hud = document.querySelector("#hud");
 const tankButtons = document.querySelectorAll("#tank-options button");
 const weaponButtons = document.querySelectorAll("#weapon-options button");
-const modeButtons = document.querySelectorAll("#mode-options button");
-const menuOverlay = document.querySelector("#main-menu");
-const loadingOverlay = document.querySelector("#loading-screen");
-const loadingProgress = document.querySelector("#loading-progress");
-const menuStartButtons = document.querySelectorAll("[data-start]");
 
 const WORLD = {
   width: canvas.width,
@@ -42,8 +37,6 @@ const WEAPON_TYPES = {
     color: "#9ce7ff",
     spread: 0,
     pellets: 1,
-    trail: "#7dd3fc",
-    impact: "#bae6fd",
   },
   scatter: {
     label: "Scatter",
@@ -54,27 +47,6 @@ const WEAPON_TYPES = {
     color: "#ffd29c",
     spread: 0.18,
     pellets: 4,
-    trail: "#facc15",
-    impact: "#fde68a",
-  },
-};
-
-const GAME_MODES = {
-  sandbox: {
-    label: "Entraînement",
-    description: "Exploration libre et tir sur cible.",
-    enemyCount: 0,
-  },
-  bots: {
-    label: "Combat bot",
-    description: "Affronte des bots agressifs.",
-    enemyCount: 4,
-  },
-  online: {
-    label: "En ligne",
-    description: "Mode réseau en préparation.",
-    enemyCount: 0,
-    locked: true,
   },
 };
 
@@ -87,8 +59,6 @@ const obstacles = [
 ];
 
 const enemies = [];
-const bullets = [];
-const particles = [];
 
 const input = {
   keys: new Set(),
@@ -98,7 +68,6 @@ const input = {
 
 let selectedTank = "scout";
 let selectedWeapon = "cannon";
-let selectedMode = "sandbox";
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -172,25 +141,6 @@ function resolveAxis(entity, dx, dy, solids) {
   return resolved;
 }
 
-function spawnParticles({ x, y, color, count, spread, speed, life, size }) {
-  for (let i = 0; i < count; i += 1) {
-    const angle = Math.random() * Math.PI * 2;
-    const velocity = speed * (0.4 + Math.random() * 0.6);
-    particles.push(
-      new Particle({
-        x,
-        y,
-        vx: Math.cos(angle) * velocity,
-        vy: Math.sin(angle) * velocity,
-        color,
-        life: life * (0.7 + Math.random() * 0.5),
-        size: size * (0.6 + Math.random() * 0.7),
-        spread,
-      })
-    );
-  }
-}
-
 class Tank {
   constructor(typeKey) {
     this.setType(typeKey);
@@ -199,7 +149,6 @@ class Tank {
     this.angle = 0;
     this.weapon = new Weapon(selectedWeapon, this);
     this.health = this.maxHealth;
-    this.energy = 100;
   }
 
   setType(typeKey) {
@@ -232,8 +181,6 @@ class Tank {
 
     this.angle = Math.atan2(input.pointer.y - this.y, input.pointer.x - this.x);
     this.weapon.update(dt);
-
-    this.energy = clamp(this.energy + dt * 6, 0, 100);
   }
 
   draw() {
@@ -268,8 +215,6 @@ class Weapon {
     this.color = type.color;
     this.spread = type.spread;
     this.pellets = type.pellets;
-    this.trail = type.trail;
-    this.impact = type.impact;
   }
 
   update(dt) {
@@ -284,37 +229,23 @@ class Weapon {
     for (let i = 0; i < this.pellets; i += 1) {
       const jitter = (Math.random() - 0.5) * this.spread;
       const angle = this.owner.angle + jitter;
-      const muzzleX = this.owner.x + Math.cos(angle) * (this.owner.width / 2 + 6);
-      const muzzleY = this.owner.y + Math.sin(angle) * (this.owner.width / 2 + 6);
       bullets.push(
         new Bullet({
-          x: muzzleX,
-          y: muzzleY,
+          x: this.owner.x + Math.cos(angle) * (this.owner.width / 2 + 6),
+          y: this.owner.y + Math.sin(angle) * (this.owner.width / 2 + 6),
           angle,
           speed: this.bulletSpeed,
           size: this.bulletSize,
           damage: this.damage,
           color: this.color,
-          trail: this.trail,
-          impact: this.impact,
         })
       );
-      spawnParticles({
-        x: muzzleX,
-        y: muzzleY,
-        color: this.trail,
-        count: 10,
-        spread: 0.6,
-        speed: 120,
-        life: 0.35,
-        size: 2.4,
-      });
     }
   }
 }
 
 class Bullet {
-  constructor({ x, y, angle, speed, size, damage, color, trail, impact }) {
+  constructor({ x, y, angle, speed, size, damage, color }) {
     this.x = x;
     this.y = y;
     this.angle = angle;
@@ -322,35 +253,18 @@ class Bullet {
     this.size = size;
     this.damage = damage;
     this.color = color;
-    this.trail = trail;
-    this.impact = impact;
     this.isAlive = true;
-    this.life = 1.2;
   }
 
   update(dt) {
-    const previous = { x: this.x, y: this.y };
     this.x += Math.cos(this.angle) * this.speed * dt;
     this.y += Math.sin(this.angle) * this.speed * dt;
-    this.life -= dt;
-
-    spawnParticles({
-      x: (previous.x + this.x) / 2,
-      y: (previous.y + this.y) / 2,
-      color: this.trail,
-      count: 2,
-      spread: 0.2,
-      speed: 40,
-      life: 0.25,
-      size: 1.6,
-    });
 
     if (
       this.x < WORLD.padding ||
       this.x > WORLD.width - WORLD.padding ||
       this.y < WORLD.padding ||
-      this.y > WORLD.height - WORLD.padding ||
-      this.life <= 0
+      this.y > WORLD.height - WORLD.padding
     ) {
       this.isAlive = false;
       return;
@@ -366,7 +280,6 @@ class Bullet {
     for (const solid of obstacles) {
       if (rectsIntersect(bulletRect, solid)) {
         this.isAlive = false;
-        spawnImpact(this.x, this.y, this.impact);
         return;
       }
     }
@@ -376,7 +289,6 @@ class Bullet {
       if (rectsIntersect(bulletRect, getRect(enemy))) {
         enemy.takeDamage(this.damage);
         this.isAlive = false;
-        spawnImpact(this.x, this.y, this.impact);
         return;
       }
     }
@@ -387,67 +299,6 @@ class Bullet {
     ctx.beginPath();
     ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
     ctx.fill();
-  }
-}
-
-class Particle {
-  constructor({ x, y, vx, vy, color, life, size }) {
-    this.x = x;
-    this.y = y;
-    this.vx = vx;
-    this.vy = vy;
-    this.color = color;
-    this.life = life;
-    this.maxLife = life;
-    this.size = size;
-    this.isAlive = true;
-  }
-
-  update(dt) {
-    this.life -= dt;
-    if (this.life <= 0) {
-      this.isAlive = false;
-      return;
-    }
-    this.x += this.vx * dt;
-    this.y += this.vy * dt;
-    this.vx *= 0.96;
-    this.vy *= 0.96;
-  }
-
-  draw() {
-    const alpha = clamp(this.life / this.maxLife, 0, 1);
-    ctx.fillStyle = `${this.color}${Math.floor(alpha * 255).toString(16).padStart(2, "0")}`;
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, this.size * alpha, 0, Math.PI * 2);
-    ctx.fill();
-  }
-}
-
-class Shockwave {
-  constructor(x, y, color) {
-    this.x = x;
-    this.y = y;
-    this.radius = 6;
-    this.color = color;
-    this.life = 0.45;
-    this.maxLife = this.life;
-    this.isAlive = true;
-  }
-
-  update(dt) {
-    this.life -= dt;
-    this.radius += dt * 160;
-    if (this.life <= 0) this.isAlive = false;
-  }
-
-  draw() {
-    const alpha = this.life / this.maxLife;
-    ctx.strokeStyle = `${this.color}${Math.floor(alpha * 255).toString(16).padStart(2, "0")}`;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-    ctx.stroke();
   }
 }
 
@@ -499,7 +350,6 @@ class Enemy {
     this.health -= amount;
     if (this.health <= 0) {
       this.isAlive = false;
-      spawnImpact(this.x, this.y, "#f87171");
     }
   }
 
@@ -515,77 +365,18 @@ class Enemy {
   }
 }
 
-function spawnImpact(x, y, color) {
-  spawnParticles({
-    x,
-    y,
-    color,
-    count: 16,
-    spread: 1,
-    speed: 180,
-    life: 0.5,
-    size: 3.2,
-  });
-  particles.push(new Shockwave(x, y, color));
-}
-
 const player = new Tank(selectedTank);
+const bullets = [];
+
+enemies.push(new Enemy(160, 320));
+enemies.push(new Enemy(760, 220));
+enemies.push(new Enemy(680, 480));
 
 function setActiveButton(buttons, value) {
   buttons.forEach((button) => {
-    button.classList.toggle("is-active", button.dataset.tank === value || button.dataset.weapon === value || button.dataset.mode === value);
+    button.classList.toggle("is-active", button.dataset.tank === value || button.dataset.weapon === value);
   });
 }
-
-function updateMode(modeKey) {
-  const mode = GAME_MODES[modeKey];
-  if (mode.locked) return;
-  selectedMode = modeKey;
-  setActiveButton(modeButtons, selectedMode);
-}
-
-function resetSession() {
-  bullets.length = 0;
-  particles.length = 0;
-  enemies.length = 0;
-  player.x = WORLD.width / 2;
-  player.y = WORLD.height / 2;
-  player.health = player.maxHealth;
-  player.energy = 100;
-
-  const mode = GAME_MODES[selectedMode];
-  if (mode.enemyCount > 0) {
-    for (let i = 0; i < mode.enemyCount; i += 1) {
-      enemies.push(new Enemy(160 + i * 160, 220 + (i % 2) * 160));
-    }
-  }
-}
-
-function showOverlay(element, show) {
-  element.classList.toggle("is-visible", show);
-  element.setAttribute("aria-hidden", String(!show));
-}
-
-function runLoadingSequence() {
-  showOverlay(menuOverlay, false);
-  showOverlay(loadingOverlay, true);
-  let progress = 0;
-  const timer = setInterval(() => {
-    progress = clamp(progress + Math.random() * 18, 0, 100);
-    loadingProgress.style.width = `${progress}%`;
-    if (progress >= 100) {
-      clearInterval(timer);
-      showOverlay(loadingOverlay, false);
-      resetSession();
-    }
-  }, 160);
-}
-
-modeButtons.forEach((button) => {
-  button.addEventListener("click", () => {
-    updateMode(button.dataset.mode);
-  });
-});
 
 tankButtons.forEach((button) => {
   button.addEventListener("click", () => {
@@ -604,14 +395,6 @@ weaponButtons.forEach((button) => {
   });
 });
 
-menuStartButtons.forEach((button) => {
-  button.addEventListener("click", () => {
-    const startMode = button.dataset.start;
-    updateMode(startMode);
-    runLoadingSequence();
-  });
-});
-
 window.addEventListener("keydown", (event) => {
   input.keys.add(event.code);
   if (event.code === "Space") input.shooting = true;
@@ -624,9 +407,6 @@ window.addEventListener("keydown", (event) => {
     selectedWeapon = "scatter";
     player.weapon.setType(selectedWeapon);
     setActiveButton(weaponButtons, selectedWeapon);
-  }
-  if (event.code === "Escape") {
-    showOverlay(menuOverlay, true);
   }
 });
 
@@ -667,23 +447,10 @@ function drawArena() {
 
 function updateHud() {
   const aliveEnemies = enemies.filter((enemy) => enemy.isAlive).length;
-  const mode = GAME_MODES[selectedMode];
-  const healthPercent = Math.round((player.health / player.maxHealth) * 100);
-  const energyPercent = Math.round(player.energy);
-
   hud.innerHTML = `
-    <div class="hud-badge">${mode.label}</div>
-    <div class="hud-title">${player.label} — ${player.weapon.label}</div>
-    <div>
-      <div class="hud-line"><span>PV</span><span>${Math.max(0, Math.round(player.health))}/${player.maxHealth}</span></div>
-      <div class="hud-bar"><div class="hud-bar-fill" style="width: ${healthPercent}%"></div></div>
-    </div>
-    <div>
-      <div class="hud-line"><span>Énergie</span><span>${energyPercent}%</span></div>
-      <div class="hud-bar"><div class="hud-bar-fill" style="width: ${energyPercent}%; background: linear-gradient(90deg, #a855f7, #f472b6);"></div></div>
-    </div>
-    <div class="hud-line"><span>Ennemis</span><span>${aliveEnemies}</span></div>
-    <div class="hud-line"><span>Objectif</span><span>${mode.description}</span></div>
+    <strong>${player.label}</strong> — ${player.weapon.label}<br />
+    PV: ${Math.max(0, Math.round(player.health))} / ${player.maxHealth}<br />
+    Ennemis restants : ${aliveEnemies}
   `;
 }
 
@@ -692,23 +459,15 @@ function loop(timestamp) {
   const dt = Math.min(0.033, (timestamp - lastTime) / 1000 || 0);
   lastTime = timestamp;
 
-  if (!menuOverlay.classList.contains("is-visible") && !loadingOverlay.classList.contains("is-visible")) {
-    player.update(dt);
-    enemies.forEach((enemy) => enemy.update(dt, player));
+  player.update(dt);
+  enemies.forEach((enemy) => enemy.update(dt, player));
 
-    bullets.forEach((bullet) => bullet.update(dt));
-    for (let i = bullets.length - 1; i >= 0; i -= 1) {
-      if (!bullets[i].isAlive) bullets.splice(i, 1);
-    }
-
-    particles.forEach((particle) => particle.update(dt));
-    for (let i = particles.length - 1; i >= 0; i -= 1) {
-      if (!particles[i].isAlive) particles.splice(i, 1);
-    }
+  bullets.forEach((bullet) => bullet.update(dt));
+  for (let i = bullets.length - 1; i >= 0; i -= 1) {
+    if (!bullets[i].isAlive) bullets.splice(i, 1);
   }
 
   drawArena();
-  particles.forEach((particle) => particle.draw());
   player.draw();
   enemies.forEach((enemy) => enemy.draw());
   bullets.forEach((bullet) => bullet.draw());
@@ -717,5 +476,4 @@ function loop(timestamp) {
   requestAnimationFrame(loop);
 }
 
-showOverlay(menuOverlay, true);
 requestAnimationFrame(loop);
