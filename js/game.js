@@ -8,6 +8,9 @@ const modeDetails = document.querySelector("#mode-details");
 const startMissionButton = document.querySelector("#start-mission");
 const mainMenu = document.querySelector("#main-menu");
 const loadingScreen = document.querySelector("#loading-screen");
+const pauseMenu = document.querySelector("#pause-menu");
+const resumeMissionButton = document.querySelector("#resume-mission");
+const exitMissionButton = document.querySelector("#exit-mission");
 const loadingStatus = document.querySelector("#loading-status");
 const loadingProgress = document.querySelector("#loading-progress");
 const hudMode = document.querySelector("#hud-mode");
@@ -636,7 +639,12 @@ function setPhase(phase) {
   gameState.phase = phase;
   mainMenu.classList.toggle("is-active", phase === "menu");
   loadingScreen.classList.toggle("is-active", phase === "loading");
-  hud.classList.toggle("is-active", phase === "playing");
+  pauseMenu.classList.toggle("is-active", phase === "paused");
+  hud.classList.toggle("is-active", phase === "playing" || phase === "paused");
+  if (phase !== "playing") {
+    input.keys.clear();
+    input.shooting = false;
+  }
 }
 
 function startLoading() {
@@ -676,6 +684,24 @@ function startMatch() {
   bullets.length = 0;
   particles.length = 0;
   spawnEnemies(GAME_MODES[gameState.mode].enemyCount);
+}
+
+function returnToMenu() {
+  setPhase("menu");
+  gameState.score = 0;
+  gameState.wave = 1;
+  gameState.energy = 1;
+  bullets.length = 0;
+  particles.length = 0;
+  enemies.length = 0;
+}
+
+function togglePause() {
+  if (gameState.phase === "playing") {
+    setPhase("paused");
+  } else if (gameState.phase === "paused") {
+    setPhase("playing");
+  }
 }
 
 function drawArena() {
@@ -734,6 +760,16 @@ startMissionButton.addEventListener("click", () => {
   }
 });
 
+resumeMissionButton.addEventListener("click", () => {
+  if (gameState.phase === "paused") {
+    setPhase("playing");
+  }
+});
+
+exitMissionButton.addEventListener("click", () => {
+  returnToMenu();
+});
+
 tankButtons.forEach((button) => {
   button.addEventListener("click", () => {
     selectedTank = button.dataset.tank;
@@ -752,6 +788,10 @@ weaponButtons.forEach((button) => {
 });
 
 window.addEventListener("keydown", (event) => {
+  if (event.code === "Escape") {
+    togglePause();
+    return;
+  }
   input.keys.add(event.code);
   if (event.code === "Space") input.shooting = true;
   if (event.code === "Digit1") {
@@ -772,6 +812,7 @@ window.addEventListener("keyup", (event) => {
 });
 
 canvas.addEventListener("mousemove", (event) => {
+  if (gameState.phase !== "playing") return;
   const rect = canvas.getBoundingClientRect();
   const scaleX = canvas.width / rect.width;
   const scaleY = canvas.height / rect.height;
@@ -780,6 +821,7 @@ canvas.addEventListener("mousemove", (event) => {
 });
 
 canvas.addEventListener("mousedown", () => {
+  if (gameState.phase !== "playing") return;
   input.shooting = true;
 });
 
