@@ -438,7 +438,7 @@ canvas {
 }
 
 .hud-card {
-  background: rgba(12, 15, 23, 0.78);
+  background: rgba(12, 15, 23, 0.5);
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   padding: 12px 14px;
@@ -482,7 +482,7 @@ canvas {
 .hud-bottom {
   display: grid;
   gap: 12px;
-  background: rgba(8, 11, 18, 0.7);
+  background: rgba(8, 11, 18, 0.45);
   border-radius: 16px;
   padding: 14px 18px;
   border: 1px solid rgba(255, 255, 255, 0.1);
