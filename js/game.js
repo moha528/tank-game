@@ -87,11 +87,11 @@ const GAME_MODES = {
   },
   online: {
     label: "En ligne",
-    description: "Créez ou rejoignez un salon, invitez votre escouade et configurez la partie.",
-    objective: "Gérez votre salon avant de lancer la mission.",
-    enemyCount: 4,
-    waves: 2,
-    systems: "Salons persistants, codes d'invitation, paramètres de match",
+    description: "Créez un salon et connectez-vous en direct avec un ami pour un duel tactique.",
+    objective: "Lancez la session et utilisez la connexion P2P pour synchroniser la partie.",
+    enemyCount: 0,
+    waves: Infinity,
+    systems: "Connexion P2P, salons persistants, codes d'invitation",
     scoreMultiplier: 1.5,
   },
 };
@@ -194,6 +194,21 @@ const WEAPON_TYPES = {
   },
 };
 
+const remotePlayer = {
+  active: false,
+  name: "",
+  typeKey: "scout",
+  x: WORLD.width / 2,
+  y: WORLD.height / 2,
+  angle: 0,
+  width: TANK_TYPES.scout.size.width,
+  height: TANK_TYPES.scout.size.height,
+  color: TANK_TYPES.scout.color,
+  health: TANK_TYPES.scout.maxHealth,
+  maxHealth: TANK_TYPES.scout.maxHealth,
+  weaponLabel: WEAPON_TYPES.cannon.label,
+};
+
 const obstacles = [
   { x: 140, y: 120, width: 120, height: 60 },
   { x: 360, y: 220, width: 160, height: 90 },
@@ -240,6 +255,30 @@ const DEFAULT_ONLINE_STATE = {
   rooms: [],
   activeRoomId: null,
 };
+
+const P2P_CONFIG = {
+  iceServers: [{ urls: "stun:stun.l.google.com:19302" }, { urls: "stun:stun1.l.google.com:19302" }],
+};
+
+const P2P_STATUS_LABELS = {
+  idle: "Hors ligne",
+  gathering: "Création du lien...",
+  waiting: "En attente du signal distant",
+  connecting: "Connexion en cours...",
+  connected: "Connecté",
+  failed: "Échec de connexion",
+};
+
+const p2pState = {
+  role: null,
+  status: "idle",
+  localSignal: "",
+  remoteSignal: "",
+};
+
+let peerConnection = null;
+let dataChannel = null;
+let lastNetworkSend = 0;
 
 function loadOnlineState() {
   try {
@@ -377,6 +416,7 @@ function leaveRoom(roomId, silent = false) {
   }
   if (onlineState.activeRoomId === roomId) {
     onlineState.activeRoomId = null;
+    resetP2PConnection();
   }
   saveOnlineState();
   if (!silent) {
@@ -402,6 +442,7 @@ function createRoom() {
   if (onlineState.activeRoomId) {
     leaveRoom(onlineState.activeRoomId, true);
   }
+  resetP2PConnection();
   const room = {
     id: `room-${Date.now()}`,
     code,
@@ -444,6 +485,7 @@ function joinRoomByCode(codeInput) {
   if (onlineState.activeRoomId && onlineState.activeRoomId !== room.id) {
     leaveRoom(onlineState.activeRoomId, true);
   }
+  resetP2PConnection();
   onlineState.activeRoomId = room.id;
   saveOnlineState();
   setStatusMessage(joinRoomStatus, `Connecté au salon ${room.name}.`, "success");
@@ -477,6 +519,230 @@ function copyToClipboard(text) {
   } else {
     setStatusMessage(joinRoomStatus, "Copie automatique indisponible.", "error");
   }
+}
+
+function getP2PStatusLabel() {
+  return P2P_STATUS_LABELS[p2pState.status] || P2P_STATUS_LABELS.idle;
+}
+
+function isP2PConnected() {
+  return dataChannel && dataChannel.readyState === "open";
+}
+
+function updateP2PFields() {
+  if (!activeRoomPanel) {
+    updateStartMissionButton();
+    return;
+  }
+  const statusNode = activeRoomPanel.querySelector("#p2p-status");
+  if (statusNode) {
+    statusNode.textContent = `Statut : ${getP2PStatusLabel()}`;
+  }
+  const localField = activeRoomPanel.querySelector("#p2p-local-signal");
+  if (localField) {
+    localField.value = p2pState.localSignal;
+  }
+  const remoteField = activeRoomPanel.querySelector("#p2p-remote-signal");
+  if (remoteField && !remoteField.value) {
+    remoteField.value = p2pState.remoteSignal;
+  }
+  updateStartMissionButton();
+}
+
+function resetP2PConnection({ keepSignals = false } = {}) {
+  if (dataChannel) {
+    dataChannel.close();
+  }
+  if (peerConnection) {
+    peerConnection.close();
+  }
+  dataChannel = null;
+  peerConnection = null;
+  remotePlayer.active = false;
+  remotePlayer.name = "";
+  p2pState.role = null;
+  p2pState.status = "idle";
+  if (!keepSignals) {
+    p2pState.localSignal = "";
+    p2pState.remoteSignal = "";
+  }
+  updateP2PFields();
+}
+
+function setupDataChannel(channel) {
+  dataChannel = channel;
+  dataChannel.onopen = () => {
+    p2pState.status = "connected";
+    sendP2PMessage({
+      type: "hello",
+      name: getPlayerName(),
+      tank: selectedTank,
+      weapon: selectedWeapon,
+      health: player.health,
+      maxHealth: player.maxHealth,
+    });
+    updateP2PFields();
+  };
+  dataChannel.onclose = () => {
+    p2pState.status = "idle";
+    remotePlayer.active = false;
+    updateP2PFields();
+  };
+  dataChannel.onerror = () => {
+    p2pState.status = "failed";
+    updateP2PFields();
+  };
+  dataChannel.onmessage = (event) => {
+    try {
+      const message = JSON.parse(event.data);
+      handleP2PMessage(message);
+    } catch (error) {
+      console.warn("P2P message error", error);
+    }
+  };
+}
+
+function createPeerConnection(role) {
+  resetP2PConnection({ keepSignals: true });
+  p2pState.role = role;
+  p2pState.status = "gathering";
+  const connection = new RTCPeerConnection(P2P_CONFIG);
+  peerConnection = connection;
+
+  connection.onicecandidate = (event) => {
+    if (!event.candidate && connection.localDescription) {
+      p2pState.localSignal = JSON.stringify(connection.localDescription);
+      p2pState.status = "waiting";
+      updateP2PFields();
+    }
+  };
+
+  connection.onconnectionstatechange = () => {
+    if (connection.connectionState === "connected") {
+      p2pState.status = "connected";
+    } else if (["failed", "disconnected"].includes(connection.connectionState)) {
+      p2pState.status = "failed";
+      remotePlayer.active = false;
+    } else if (connection.connectionState === "connecting") {
+      p2pState.status = "connecting";
+    }
+    updateP2PFields();
+  };
+
+  connection.ondatachannel = (event) => {
+    setupDataChannel(event.channel);
+  };
+
+  if (role === "host") {
+    const channel = connection.createDataChannel("tank-arena");
+    setupDataChannel(channel);
+  }
+  updateP2PFields();
+  return connection;
+}
+
+async function createOffer() {
+  const connection = createPeerConnection("host");
+  const offer = await connection.createOffer();
+  await connection.setLocalDescription(offer);
+  updateP2PFields();
+}
+
+async function createAnswerFromOffer(offerText) {
+  const connection = createPeerConnection("guest");
+  const offer = JSON.parse(offerText);
+  await connection.setRemoteDescription(offer);
+  const answer = await connection.createAnswer();
+  await connection.setLocalDescription(answer);
+  updateP2PFields();
+}
+
+async function applyRemoteSignal(signalText) {
+  if (!peerConnection) {
+    setStatusMessage(joinRoomStatus, "Créez une offre ou une réponse avant d'appliquer un signal.", "error");
+    return;
+  }
+  const signal = JSON.parse(signalText);
+  await peerConnection.setRemoteDescription(signal);
+  updateP2PFields();
+}
+
+function sendP2PMessage(payload) {
+  if (!isP2PConnected()) return;
+  dataChannel.send(JSON.stringify(payload));
+}
+
+function setRemoteLoadout({ tank, weapon }) {
+  const typeKey = TANK_TYPES[tank] ? tank : "scout";
+  const type = TANK_TYPES[typeKey];
+  remotePlayer.typeKey = typeKey;
+  remotePlayer.width = type.size.width;
+  remotePlayer.height = type.size.height;
+  remotePlayer.color = type.color;
+  remotePlayer.maxHealth = type.maxHealth;
+  remotePlayer.weaponLabel = WEAPON_TYPES[weapon]?.label ?? WEAPON_TYPES.cannon.label;
+}
+
+function handleP2PMessage(message) {
+  if (!message || typeof message !== "object") return;
+  if (message.type === "hello") {
+    remotePlayer.active = true;
+    remotePlayer.name = message.name || "Coéquipier";
+    setRemoteLoadout({ tank: message.tank, weapon: message.weapon });
+    remotePlayer.health = message.health ?? remotePlayer.maxHealth;
+    remotePlayer.maxHealth = message.maxHealth ?? remotePlayer.maxHealth;
+    return;
+  }
+  if (message.type === "loadout") {
+    setRemoteLoadout({ tank: message.tank, weapon: message.weapon });
+    return;
+  }
+  if (message.type === "state") {
+    remotePlayer.active = true;
+    remotePlayer.x = message.x;
+    remotePlayer.y = message.y;
+    remotePlayer.angle = message.angle;
+    remotePlayer.health = message.health ?? remotePlayer.health;
+    remotePlayer.maxHealth = message.maxHealth ?? remotePlayer.maxHealth;
+    return;
+  }
+  if (message.type === "bullet") {
+    spawnNetworkBullet(message, "remote");
+  }
+}
+
+function sendLoadoutUpdate() {
+  sendP2PMessage({ type: "loadout", tank: selectedTank, weapon: selectedWeapon });
+}
+
+function sendPlayerState() {
+  sendP2PMessage({
+    type: "state",
+    x: player.x,
+    y: player.y,
+    angle: player.angle,
+    health: player.health,
+    maxHealth: player.maxHealth,
+  });
+}
+
+function sendBulletEvent(payload) {
+  sendP2PMessage({ type: "bullet", ...payload });
+}
+
+function spawnNetworkBullet(payload, owner) {
+  bullets.push(
+    new Bullet({
+      x: payload.x,
+      y: payload.y,
+      angle: payload.angle,
+      speed: payload.speed,
+      size: payload.size,
+      damage: payload.damage,
+      color: payload.color,
+      owner,
+    })
+  );
 }
 
 const gameState = {
@@ -835,17 +1101,31 @@ class Weapon {
     for (let i = 0; i < this.pellets; i += 1) {
       const jitter = (Math.random() - 0.5) * this.spread;
       const angle = this.owner.angle + jitter;
+      const spawnX = this.owner.x + Math.cos(angle) * (this.owner.width / 2 + 6);
+      const spawnY = this.owner.y + Math.sin(angle) * (this.owner.width / 2 + 6);
       bullets.push(
         new Bullet({
-          x: this.owner.x + Math.cos(angle) * (this.owner.width / 2 + 6),
-          y: this.owner.y + Math.sin(angle) * (this.owner.width / 2 + 6),
+          x: spawnX,
+          y: spawnY,
           angle,
           speed: this.bulletSpeed,
           size: this.bulletSize,
           damage: this.damage,
           color: this.color,
+          owner: "local",
         })
       );
+      if (gameState.mode === "online") {
+        sendBulletEvent({
+          x: spawnX,
+          y: spawnY,
+          angle,
+          speed: this.bulletSpeed,
+          size: this.bulletSize,
+          damage: this.damage,
+          color: this.color,
+        });
+      }
       spawnMuzzleFlash(
         this.owner.x + Math.cos(angle) * (this.owner.width / 2 + 8),
         this.owner.y + Math.sin(angle) * (this.owner.width / 2 + 8),
@@ -858,7 +1138,7 @@ class Weapon {
 }
 
 class Bullet {
-  constructor({ x, y, angle, speed, size, damage, color }) {
+  constructor({ x, y, angle, speed, size, damage, color, owner = "local" }) {
     this.x = x;
     this.y = y;
     this.prevX = x;
@@ -868,6 +1148,7 @@ class Bullet {
     this.size = size;
     this.damage = damage;
     this.color = color;
+    this.owner = owner;
     this.isAlive = true;
   }
 
@@ -903,13 +1184,32 @@ class Bullet {
       }
     }
 
-    for (const enemy of enemies) {
-      if (!enemy.isAlive) continue;
-      if (rectsIntersect(bulletRect, getRect(enemy))) {
-        enemy.takeDamage(this.damage);
+    if (gameState.mode !== "online") {
+      for (const enemy of enemies) {
+        if (!enemy.isAlive) continue;
+        if (rectsIntersect(bulletRect, getRect(enemy))) {
+          enemy.takeDamage(this.damage);
+          this.isAlive = false;
+          spawnImpact(this.x, this.y, this.color);
+          gameState.score += Math.round(10 * GAME_MODES[gameState.mode].scoreMultiplier);
+          return;
+        }
+      }
+    }
+
+    if (gameState.mode === "online" && remotePlayer.active && this.owner === "local") {
+      if (rectsIntersect(bulletRect, getRect(remotePlayer))) {
         this.isAlive = false;
         spawnImpact(this.x, this.y, this.color);
-        gameState.score += Math.round(10 * GAME_MODES[gameState.mode].scoreMultiplier);
+        return;
+      }
+    }
+
+    if (gameState.mode === "online" && this.owner === "remote") {
+      if (rectsIntersect(bulletRect, getRect(player))) {
+        this.isAlive = false;
+        spawnImpact(this.x, this.y, this.color);
+        player.health = Math.max(0, player.health - this.damage);
         return;
       }
     }
@@ -1032,6 +1332,9 @@ function setMode(modeKey) {
   updateShop();
   renderOnlinePanel();
   updateStartMissionButton();
+  if (modeKey !== "online") {
+    resetP2PConnection();
+  }
 }
 
 function spawnEnemies(count) {
@@ -1061,6 +1364,9 @@ function startWave() {
 }
 
 function updateWaves(dt) {
+  if (gameState.mode === "online") {
+    return;
+  }
   if (gameState.waveCountdown > 0) {
     gameState.waveCountdown = Math.max(0, gameState.waveCountdown - dt);
     gameState.waveStatus = `Déploiement dans ${gameState.waveCountdown.toFixed(1)}s`;
@@ -1172,10 +1478,13 @@ function startMatch() {
   gameState.wave = 1;
   gameState.waveCountdown = 0;
   gameState.waveCooldown = 0;
-  gameState.waveStatus = "Préparation de vague";
+  gameState.waveStatus = gameState.mode === "online" ? "Connexion en ligne" : "Préparation de vague";
   bullets.length = 0;
   particles.length = 0;
-  scheduleNextWave();
+  enemies.length = 0;
+  if (gameState.mode !== "online") {
+    scheduleNextWave();
+  }
   updateShop();
 }
 
@@ -1291,16 +1600,39 @@ function drawArena() {
   });
 }
 
+function drawRemotePlayer() {
+  ctx.save();
+  ctx.translate(remotePlayer.x, remotePlayer.y);
+  ctx.rotate(remotePlayer.angle);
+  ctx.fillStyle = remotePlayer.color;
+  ctx.shadowColor = remotePlayer.color;
+  ctx.shadowBlur = 10;
+  ctx.fillRect(-remotePlayer.width / 2, -remotePlayer.height / 2, remotePlayer.width, remotePlayer.height);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "#111827";
+  ctx.fillRect(-6, -remotePlayer.height / 2, 12, remotePlayer.height);
+  ctx.fillStyle = "#e0f2fe";
+  ctx.fillRect(0, -4, remotePlayer.width / 2 + 6, 8);
+  ctx.restore();
+}
+
 function updateHud() {
   const aliveEnemies = enemies.filter((enemy) => enemy.isAlive).length;
   const mode = GAME_MODES[gameState.mode];
   hudMode.textContent = mode.label;
   hudObjective.textContent = mode.objective;
   hudSystems.textContent = mode.systems;
-  hudEnemies.textContent = `Ennemis : ${aliveEnemies}`;
-  const waveTotal = mode.waves === Infinity ? "∞" : mode.waves;
-  hudWave.textContent = `Vague ${gameState.wave} / ${waveTotal}`;
-  hudWaveStatus.textContent = gameState.waveStatus;
+  if (gameState.mode === "online") {
+    const peerLabel = remotePlayer.active ? remotePlayer.name : "en attente";
+    hudEnemies.textContent = `Équipier : ${peerLabel}`;
+    hudWave.textContent = "Session en ligne";
+    hudWaveStatus.textContent = getP2PStatusLabel();
+  } else {
+    hudEnemies.textContent = `Ennemis : ${aliveEnemies}`;
+    const waveTotal = mode.waves === Infinity ? "∞" : mode.waves;
+    hudWave.textContent = `Vague ${gameState.wave} / ${waveTotal}`;
+    hudWaveStatus.textContent = gameState.waveStatus;
+  }
   hudTank.textContent = player.label;
   hudWeapon.textContent = player.weapon.label;
   hudScore.textContent = gameState.score;
@@ -1377,6 +1709,9 @@ function updateShop() {
         player.health = player.maxHealth;
         setActiveButton(tankButtons, selectedTank);
         updateShop();
+        if (gameState.mode === "online") {
+          sendLoadoutUpdate();
+        }
       },
     });
     tankShop.appendChild(item);
@@ -1406,6 +1741,9 @@ function updateShop() {
         player.weapon.setType(selectedWeapon);
         setActiveButton(weaponButtons, selectedWeapon);
         updateShop();
+        if (gameState.mode === "online") {
+          sendLoadoutUpdate();
+        }
       },
     });
     weaponShop.appendChild(item);
@@ -1473,8 +1811,18 @@ function updateStartMissionButton() {
     return;
   }
   const activeRoom = getActiveRoom();
-  startMissionButton.textContent = activeRoom ? "Lancer la mission en ligne" : "Créer ou rejoindre un salon";
-  startMissionButton.disabled = !activeRoom;
+  if (!activeRoom) {
+    startMissionButton.textContent = "Créer ou rejoindre un salon";
+    startMissionButton.disabled = true;
+    return;
+  }
+  if (!isP2PConnected()) {
+    startMissionButton.textContent = "Connectez-vous en P2P";
+    startMissionButton.disabled = true;
+    return;
+  }
+  startMissionButton.textContent = "Lancer la mission en ligne";
+  startMissionButton.disabled = false;
 }
 
 function renderRoomList() {
@@ -1563,6 +1911,26 @@ function renderActiveRoom() {
         </ul>
       </div>
     </div>
+    <div class="online-card">
+      <h3>Connexion directe (P2P)</h3>
+      <p class="online-hint" id="p2p-status">Statut : ${getP2PStatusLabel()}</p>
+      <label class="field">
+        <span>Votre signal</span>
+        <textarea id="p2p-local-signal" readonly></textarea>
+      </label>
+      <label class="field">
+        <span>Signal distant</span>
+        <textarea id="p2p-remote-signal" placeholder="Collez ici l'offre ou la réponse reçue."></textarea>
+      </label>
+      <div class="room-actions">
+        <button class="ghost-button" id="p2p-create-offer" type="button">Créer une offre</button>
+        <button class="ghost-button" id="p2p-create-answer" type="button">Créer une réponse</button>
+        <button class="ghost-button" id="p2p-apply-remote" type="button">Appliquer le signal</button>
+      </div>
+      <p class="online-hint">
+        Hôte : créez une offre, partagez-la, puis appliquez la réponse. Invité : collez l'offre et créez une réponse.
+      </p>
+    </div>
     ${
       isHost
         ? `
@@ -1621,6 +1989,7 @@ function renderActiveRoom() {
     closeButton.addEventListener("click", () => {
       onlineState.rooms = onlineState.rooms.filter((item) => item.id !== room.id);
       onlineState.activeRoomId = null;
+      resetP2PConnection();
       saveOnlineState();
       setStatusMessage(joinRoomStatus, "Salon fermé.", "success");
       renderOnlinePanel();
@@ -1642,6 +2011,56 @@ function renderActiveRoom() {
       });
     });
   }
+
+  const createOfferButton = activeRoomPanel.querySelector("#p2p-create-offer");
+  if (createOfferButton) {
+    createOfferButton.addEventListener("click", async () => {
+      try {
+        await createOffer();
+      } catch (error) {
+        console.warn("Offer creation error", error);
+        setStatusMessage(joinRoomStatus, "Impossible de créer l'offre.", "error");
+      }
+    });
+  }
+
+  const createAnswerButton = activeRoomPanel.querySelector("#p2p-create-answer");
+  if (createAnswerButton) {
+    createAnswerButton.addEventListener("click", async () => {
+      const remoteSignal = activeRoomPanel.querySelector("#p2p-remote-signal").value.trim();
+      if (!remoteSignal) {
+        setStatusMessage(joinRoomStatus, "Collez une offre avant de créer la réponse.", "error");
+        return;
+      }
+      try {
+        p2pState.remoteSignal = remoteSignal;
+        await createAnswerFromOffer(remoteSignal);
+      } catch (error) {
+        console.warn("Answer creation error", error);
+        setStatusMessage(joinRoomStatus, "Impossible de créer la réponse.", "error");
+      }
+    });
+  }
+
+  const applyRemoteButton = activeRoomPanel.querySelector("#p2p-apply-remote");
+  if (applyRemoteButton) {
+    applyRemoteButton.addEventListener("click", async () => {
+      const remoteSignal = activeRoomPanel.querySelector("#p2p-remote-signal").value.trim();
+      if (!remoteSignal) {
+        setStatusMessage(joinRoomStatus, "Collez un signal avant d'appliquer.", "error");
+        return;
+      }
+      try {
+        p2pState.remoteSignal = remoteSignal;
+        await applyRemoteSignal(remoteSignal);
+      } catch (error) {
+        console.warn("Signal apply error", error);
+        setStatusMessage(joinRoomStatus, "Signal invalide ou incomplet.", "error");
+      }
+    });
+  }
+
+  updateP2PFields();
 }
 
 function renderOnlinePanel() {
@@ -1653,6 +2072,7 @@ function renderOnlinePanel() {
   renderRoomList();
   renderActiveRoom();
   updateStartMissionButton();
+  updateP2PFields();
 }
 
 modeButtons.forEach((button) => {
@@ -1751,6 +2171,9 @@ tankButtons.forEach((button) => {
     player.health = player.maxHealth;
     setActiveButton(tankButtons, selectedTank);
     updateShop();
+    if (gameState.mode === "online") {
+      sendLoadoutUpdate();
+    }
   });
 });
 
@@ -1762,6 +2185,9 @@ weaponButtons.forEach((button) => {
     player.weapon.setType(selectedWeapon);
     setActiveButton(weaponButtons, selectedWeapon);
     updateShop();
+    if (gameState.mode === "online") {
+      sendLoadoutUpdate();
+    }
   });
 });
 
@@ -1788,6 +2214,9 @@ window.addEventListener("keydown", (event) => {
       player.weapon.setType(selectedWeapon);
       setActiveButton(weaponButtons, selectedWeapon);
       updateShop();
+      if (gameState.mode === "online") {
+        sendLoadoutUpdate();
+      }
     }
   }
   if (event.code === "Digit2") {
@@ -1796,6 +2225,9 @@ window.addEventListener("keydown", (event) => {
       player.weapon.setType(selectedWeapon);
       setActiveButton(weaponButtons, selectedWeapon);
       updateShop();
+      if (gameState.mode === "online") {
+        sendLoadoutUpdate();
+      }
     }
   }
   if (event.code === "Digit3") {
@@ -1804,6 +2236,9 @@ window.addEventListener("keydown", (event) => {
       player.weapon.setType(selectedWeapon);
       setActiveButton(weaponButtons, selectedWeapon);
       updateShop();
+      if (gameState.mode === "online") {
+        sendLoadoutUpdate();
+      }
     }
   }
   if (event.code === "Digit4") {
@@ -1812,6 +2247,9 @@ window.addEventListener("keydown", (event) => {
       player.weapon.setType(selectedWeapon);
       setActiveButton(weaponButtons, selectedWeapon);
       updateShop();
+      if (gameState.mode === "online") {
+        sendLoadoutUpdate();
+      }
     }
   }
 });
@@ -1847,11 +2285,20 @@ function loop(timestamp) {
   if (gameState.phase === "playing") {
     gameState.energy = clamp(gameState.energy + dt * 0.25, 0, 1);
     player.update(dt);
-    enemies.forEach((enemy) => enemy.update(dt, player));
+    if (gameState.mode !== "online") {
+      enemies.forEach((enemy) => enemy.update(dt, player));
+    }
     bullets.forEach((bullet) => bullet.update(dt));
     updateWaves(dt);
     if (player.health <= 0) {
       finishMatch("Votre tank a été détruit. Analysez vos améliorations.");
+    }
+    if (gameState.mode === "online" && isP2PConnected()) {
+      lastNetworkSend += dt;
+      if (lastNetworkSend >= 0.08) {
+        sendPlayerState();
+        lastNetworkSend = 0;
+      }
     }
   }
 
@@ -1879,7 +2326,12 @@ function loop(timestamp) {
 
   particles.filter((particle) => particle.layer === "behind").forEach((particle) => particle.draw());
   player.draw();
-  enemies.forEach((enemy) => enemy.draw());
+  if (remotePlayer.active) {
+    drawRemotePlayer();
+  }
+  if (gameState.mode !== "online") {
+    enemies.forEach((enemy) => enemy.draw());
+  }
   bullets.forEach((bullet) => bullet.draw());
   particles.filter((particle) => particle.layer !== "behind").forEach((particle) => particle.draw());
   ctx.restore();
