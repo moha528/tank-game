@@ -254,6 +254,7 @@ const gameState = {
   waveCooldown: 0,
   shakeTime: 0,
   shakeIntensity: 0,
+  hudVisible: false,
 };
 
 let selectedTank = "scout";
@@ -856,11 +857,22 @@ function setPhase(phase) {
   pauseMenu.classList.toggle("is-active", phase === "paused");
   endScreen.classList.toggle("is-active", phase === "end");
   hangarPanel.classList.toggle("is-active", phase === "hangar");
-  hud.classList.toggle("is-active", phase === "playing" || phase === "paused");
+  updateHudVisibility();
   if (phase !== "playing") {
     input.keys.clear();
     input.shooting = false;
   }
+}
+
+function updateHudVisibility() {
+  const canShowHud = gameState.phase === "playing" || gameState.phase === "paused";
+  hud.classList.toggle("is-active", canShowHud && gameState.hudVisible);
+}
+
+function toggleHudVisibility() {
+  if (!["playing", "paused"].includes(gameState.phase)) return;
+  gameState.hudVisible = !gameState.hudVisible;
+  updateHudVisibility();
 }
 
 function startLoading() {
@@ -1266,6 +1278,12 @@ window.addEventListener("keydown", (event) => {
     togglePause();
     return;
   }
+  if (event.code === "KeyH" || event.code === "Tab") {
+    event.preventDefault();
+    toggleHudVisibility();
+    return;
+  }
+
   input.keys.add(event.code);
   if (event.code === "Space") input.shooting = true;
   if (event.code === "Digit1") {
