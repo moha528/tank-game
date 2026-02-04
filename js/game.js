@@ -856,7 +856,7 @@ function setPhase(phase) {
   pauseMenu.classList.toggle("is-active", phase === "paused");
   endScreen.classList.toggle("is-active", phase === "end");
   hangarPanel.classList.toggle("is-active", phase === "hangar");
-  hud.classList.toggle("is-active", phase === "playing" || phase === "paused" || phase === "hangar");
+  hud.classList.toggle("is-active", phase === "playing" || phase === "paused");
   if (phase !== "playing") {
     input.keys.clear();
     input.shooting = false;
