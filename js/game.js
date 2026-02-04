@@ -3,11 +3,58 @@ const ctx = canvas.getContext("2d");
 const hud = document.querySelector("#hud");
 const tankButtons = document.querySelectorAll("#tank-options button");
 const weaponButtons = document.querySelectorAll("#weapon-options button");
+const modeButtons = document.querySelectorAll("#mode-options .mode-card");
+const modeDetails = document.querySelector("#mode-details");
+const startMissionButton = document.querySelector("#start-mission");
+const mainMenu = document.querySelector("#main-menu");
+const loadingScreen = document.querySelector("#loading-screen");
+const loadingStatus = document.querySelector("#loading-status");
+const loadingProgress = document.querySelector("#loading-progress");
+const hudMode = document.querySelector("#hud-mode");
+const hudObjective = document.querySelector("#hud-objective");
+const hudSystems = document.querySelector("#hud-systems");
+const hudEnemies = document.querySelector("#hud-enemies");
+const hudWave = document.querySelector("#hud-wave");
+const hudTank = document.querySelector("#hud-tank");
+const hudWeapon = document.querySelector("#hud-weapon");
+const hudScore = document.querySelector("#hud-score");
+const healthBar = document.querySelector("#health-bar");
+const energyBar = document.querySelector("#energy-bar");
 
 const WORLD = {
   width: canvas.width,
   height: canvas.height,
   padding: 24,
+};
+
+const GAME_MODES = {
+  training: {
+    label: "Entraînement Sandbox",
+    description: "Terrain libre, objectifs personnalisés, aucun risque.",
+    objective: "Déployez-vous et testez vos armes.",
+    enemyCount: 2,
+    waves: 1,
+    systems: "Diagnostics, modules libres",
+    scoreMultiplier: 0.5,
+  },
+  "bot-battle": {
+    label: "Combat Bot",
+    description: "Escarmouche rapide contre des IA tactiques.",
+    objective: "Neutralisez les drones avant la prochaine vague.",
+    enemyCount: 5,
+    waves: 3,
+    systems: "IA tactique, radar actif",
+    scoreMultiplier: 1,
+  },
+  online: {
+    label: "En ligne",
+    description: "Batailles classées synchronisées (à venir).",
+    objective: "Mode en préparation : testez la stabilité réseau.",
+    enemyCount: 4,
+    waves: 2,
+    systems: "Synchronisation en file d'attente",
+    scoreMultiplier: 1.5,
+  },
 };
 
 const TANK_TYPES = {
@@ -37,6 +84,7 @@ const WEAPON_TYPES = {
     color: "#9ce7ff",
     spread: 0,
     pellets: 1,
+    energyDrain: 0.18,
   },
   scatter: {
     label: "Scatter",
@@ -47,6 +95,7 @@ const WEAPON_TYPES = {
     color: "#ffd29c",
     spread: 0.18,
     pellets: 4,
+    energyDrain: 0.32,
   },
 };
 
@@ -59,11 +108,24 @@ const obstacles = [
 ];
 
 const enemies = [];
+const bullets = [];
+const particles = [];
 
 const input = {
   keys: new Set(),
   pointer: { x: canvas.width / 2, y: canvas.height / 2 },
   shooting: false,
+};
+
+const gameState = {
+  phase: "menu",
+  mode: "training",
+  score: 0,
+  wave: 1,
+  totalWaves: 1,
+  energy: 1,
+  shakeTime: 0,
+  shakeIntensity: 0,
 };
 
 let selectedTank = "scout";
@@ -141,6 +203,144 @@ function resolveAxis(entity, dx, dy, solids) {
   return resolved;
 }
 
+function addScreenShake(intensity) {
+  gameState.shakeTime = 0.2;
+  gameState.shakeIntensity = Math.max(gameState.shakeIntensity, intensity);
+}
+
+class Particle {
+  constructor({ x, y, vx, vy, size, color, life, layer = "front", drag = 0.98, glow = 0 }) {
+    this.x = x;
+    this.y = y;
+    this.vx = vx;
+    this.vy = vy;
+    this.size = size;
+    this.color = color;
+    this.life = life;
+    this.maxLife = life;
+    this.layer = layer;
+    this.drag = drag;
+    this.glow = glow;
+  }
+
+  update(dt) {
+    this.life -= dt;
+    this.x += this.vx * dt;
+    this.y += this.vy * dt;
+    this.vx *= this.drag;
+    this.vy *= this.drag;
+    this.size *= 0.98;
+  }
+
+  draw() {
+    if (this.life <= 0) return;
+    const alpha = this.life / this.maxLife;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = this.color;
+    if (this.glow > 0) {
+      ctx.shadowColor = this.color;
+      ctx.shadowBlur = this.glow;
+    }
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, Math.max(0.5, this.size), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+class Shockwave {
+  constructor({ x, y, radius, color }) {
+    this.x = x;
+    this.y = y;
+    this.radius = radius;
+    this.color = color;
+    this.life = 0.4;
+    this.maxLife = 0.4;
+  }
+
+  update(dt) {
+    this.life -= dt;
+    this.radius += 80 * dt;
+  }
+
+  draw() {
+    if (this.life <= 0) return;
+    const alpha = this.life / this.maxLife;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = this.color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function spawnMuzzleFlash(x, y, angle, color) {
+  const spread = 0.6;
+  for (let i = 0; i < 8; i += 1) {
+    const speed = 120 + Math.random() * 140;
+    particles.push(
+      new Particle({
+        x,
+        y,
+        vx: Math.cos(angle + (Math.random() - 0.5) * spread) * speed,
+        vy: Math.sin(angle + (Math.random() - 0.5) * spread) * speed,
+        size: 3 + Math.random() * 3,
+        color,
+        life: 0.35,
+        glow: 12,
+      })
+    );
+  }
+  particles.push(new Shockwave({ x, y, radius: 6, color }));
+  addScreenShake(2.2);
+}
+
+function spawnImpact(x, y, color) {
+  for (let i = 0; i < 12; i += 1) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 80 + Math.random() * 180;
+    particles.push(
+      new Particle({
+        x,
+        y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        size: 2 + Math.random() * 3,
+        color,
+        life: 0.45,
+        glow: 10,
+      })
+    );
+  }
+  particles.push(new Shockwave({ x, y, radius: 8, color }));
+  addScreenShake(3.4);
+}
+
+function spawnExplosion(x, y) {
+  for (let i = 0; i < 24; i += 1) {
+    const angle = (Math.PI * 2 * i) / 24;
+    const speed = 120 + Math.random() * 200;
+    particles.push(
+      new Particle({
+        x,
+        y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        size: 3 + Math.random() * 4,
+        color: "#ffb347",
+        life: 0.8,
+        glow: 14,
+      })
+    );
+  }
+  particles.push(new Shockwave({ x, y, radius: 10, color: "#ffd08a" }));
+  addScreenShake(5);
+}
+
 class Tank {
   constructor(typeKey) {
     this.setType(typeKey);
@@ -188,7 +388,10 @@ class Tank {
     ctx.translate(this.x, this.y);
     ctx.rotate(this.angle);
     ctx.fillStyle = this.color;
+    ctx.shadowColor = this.color;
+    ctx.shadowBlur = 12;
     ctx.fillRect(-this.width / 2, -this.height / 2, this.width, this.height);
+    ctx.shadowBlur = 0;
     ctx.fillStyle = "#1d2232";
     ctx.fillRect(-6, -this.height / 2, 12, this.height);
     ctx.fillStyle = "#c7d2fe";
@@ -215,6 +418,7 @@ class Weapon {
     this.color = type.color;
     this.spread = type.spread;
     this.pellets = type.pellets;
+    this.energyDrain = type.energyDrain;
   }
 
   update(dt) {
@@ -240,7 +444,14 @@ class Weapon {
           color: this.color,
         })
       );
+      spawnMuzzleFlash(
+        this.owner.x + Math.cos(angle) * (this.owner.width / 2 + 8),
+        this.owner.y + Math.sin(angle) * (this.owner.width / 2 + 8),
+        angle,
+        this.color
+      );
     }
+    gameState.energy = clamp(gameState.energy - this.energyDrain, 0, 1);
   }
 }
 
@@ -248,6 +459,8 @@ class Bullet {
   constructor({ x, y, angle, speed, size, damage, color }) {
     this.x = x;
     this.y = y;
+    this.prevX = x;
+    this.prevY = y;
     this.angle = angle;
     this.speed = speed;
     this.size = size;
@@ -257,6 +470,8 @@ class Bullet {
   }
 
   update(dt) {
+    this.prevX = this.x;
+    this.prevY = this.y;
     this.x += Math.cos(this.angle) * this.speed * dt;
     this.y += Math.sin(this.angle) * this.speed * dt;
 
@@ -267,6 +482,7 @@ class Bullet {
       this.y > WORLD.height - WORLD.padding
     ) {
       this.isAlive = false;
+      spawnImpact(this.x, this.y, this.color);
       return;
     }
 
@@ -280,6 +496,7 @@ class Bullet {
     for (const solid of obstacles) {
       if (rectsIntersect(bulletRect, solid)) {
         this.isAlive = false;
+        spawnImpact(this.x, this.y, this.color);
         return;
       }
     }
@@ -289,16 +506,32 @@ class Bullet {
       if (rectsIntersect(bulletRect, getRect(enemy))) {
         enemy.takeDamage(this.damage);
         this.isAlive = false;
+        spawnImpact(this.x, this.y, this.color);
+        gameState.score += Math.round(10 * GAME_MODES[gameState.mode].scoreMultiplier);
         return;
       }
     }
   }
 
   draw() {
+    ctx.save();
+    ctx.strokeStyle = this.color;
+    ctx.lineWidth = this.size * 1.2;
+    ctx.globalAlpha = 0.6;
+    ctx.beginPath();
+    ctx.moveTo(this.prevX, this.prevY);
+    ctx.lineTo(this.x, this.y);
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.save();
     ctx.fillStyle = this.color;
+    ctx.shadowColor = this.color;
+    ctx.shadowBlur = 12;
     ctx.beginPath();
     ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
     ctx.fill();
+    ctx.restore();
   }
 }
 
@@ -350,6 +583,7 @@ class Enemy {
     this.health -= amount;
     if (this.health <= 0) {
       this.isAlive = false;
+      spawnExplosion(this.x, this.y);
     }
   }
 
@@ -358,7 +592,10 @@ class Enemy {
     ctx.save();
     ctx.translate(this.x, this.y);
     ctx.fillStyle = "#f87171";
+    ctx.shadowColor = "#ff7b7b";
+    ctx.shadowBlur = 10;
     ctx.fillRect(-this.width / 2, -this.height / 2, this.width, this.height);
+    ctx.shadowBlur = 0;
     ctx.fillStyle = "#1f2937";
     ctx.fillRect(-6, -this.height / 2, 12, this.height);
     ctx.restore();
@@ -366,17 +603,136 @@ class Enemy {
 }
 
 const player = new Tank(selectedTank);
-const bullets = [];
-
-enemies.push(new Enemy(160, 320));
-enemies.push(new Enemy(760, 220));
-enemies.push(new Enemy(680, 480));
 
 function setActiveButton(buttons, value) {
   buttons.forEach((button) => {
-    button.classList.toggle("is-active", button.dataset.tank === value || button.dataset.weapon === value);
+    button.classList.toggle("is-active", button.dataset.tank === value || button.dataset.weapon === value || button.dataset.mode === value);
   });
 }
+
+function setMode(modeKey) {
+  const mode = GAME_MODES[modeKey];
+  gameState.mode = modeKey;
+  gameState.totalWaves = mode.waves;
+  gameState.wave = 1;
+  modeDetails.innerHTML = `
+    <strong>${mode.label}</strong><br />
+    ${mode.description}<br />
+    <em>${mode.objective}</em>
+  `;
+  setActiveButton(modeButtons, modeKey);
+}
+
+function spawnEnemies(count) {
+  enemies.length = 0;
+  for (let i = 0; i < count; i += 1) {
+    const x = 120 + Math.random() * (WORLD.width - 240);
+    const y = 120 + Math.random() * (WORLD.height - 240);
+    enemies.push(new Enemy(x, y));
+  }
+}
+
+function setPhase(phase) {
+  gameState.phase = phase;
+  mainMenu.classList.toggle("is-active", phase === "menu");
+  loadingScreen.classList.toggle("is-active", phase === "loading");
+  hud.classList.toggle("is-active", phase === "playing");
+}
+
+function startLoading() {
+  setPhase("loading");
+  const messages = [
+    "Calibration des moteurs...",
+    "Synchronisation des capteurs...",
+    "Chargement des modules tactiques...",
+    "Vérification des communications...",
+    "Systèmes prêts.",
+  ];
+  let progress = 0;
+  let messageIndex = 0;
+  loadingStatus.textContent = messages[messageIndex];
+  const interval = setInterval(() => {
+    progress += 0.12 + Math.random() * 0.08;
+    if (progress >= 1) {
+      progress = 1;
+    }
+    loadingProgress.style.width = `${Math.round(progress * 100)}%`;
+    if (progress > (messageIndex + 1) / messages.length && messageIndex < messages.length - 1) {
+      messageIndex += 1;
+      loadingStatus.textContent = messages[messageIndex];
+    }
+    if (progress >= 1) {
+      clearInterval(interval);
+      startMatch();
+    }
+  }, 180);
+}
+
+function startMatch() {
+  setPhase("playing");
+  gameState.score = 0;
+  gameState.energy = 1;
+  player.health = player.maxHealth;
+  bullets.length = 0;
+  particles.length = 0;
+  spawnEnemies(GAME_MODES[gameState.mode].enemyCount);
+}
+
+function drawArena() {
+  ctx.fillStyle = "#0d111c";
+  ctx.fillRect(0, 0, WORLD.width, WORLD.height);
+
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.08)";
+  ctx.lineWidth = 3;
+  ctx.strokeRect(WORLD.padding, WORLD.padding, WORLD.width - WORLD.padding * 2, WORLD.height - WORLD.padding * 2);
+
+  ctx.strokeStyle = "rgba(95, 128, 255, 0.08)";
+  ctx.lineWidth = 1;
+  for (let x = WORLD.padding; x < WORLD.width - WORLD.padding; x += 48) {
+    ctx.beginPath();
+    ctx.moveTo(x, WORLD.padding);
+    ctx.lineTo(x, WORLD.height - WORLD.padding);
+    ctx.stroke();
+  }
+  for (let y = WORLD.padding; y < WORLD.height - WORLD.padding; y += 48) {
+    ctx.beginPath();
+    ctx.moveTo(WORLD.padding, y);
+    ctx.lineTo(WORLD.width - WORLD.padding, y);
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = "#1f2937";
+  obstacles.forEach((obstacle) => {
+    ctx.fillRect(obstacle.x, obstacle.y, obstacle.width, obstacle.height);
+  });
+}
+
+function updateHud() {
+  const aliveEnemies = enemies.filter((enemy) => enemy.isAlive).length;
+  const mode = GAME_MODES[gameState.mode];
+  hudMode.textContent = mode.label;
+  hudObjective.textContent = mode.objective;
+  hudSystems.textContent = mode.systems;
+  hudEnemies.textContent = `Ennemis : ${aliveEnemies}`;
+  hudWave.textContent = `Vague ${gameState.wave} / ${mode.waves}`;
+  hudTank.textContent = player.label;
+  hudWeapon.textContent = player.weapon.label;
+  hudScore.textContent = gameState.score;
+  healthBar.style.width = `${(player.health / player.maxHealth) * 100}%`;
+  energyBar.style.width = `${gameState.energy * 100}%`;
+}
+
+modeButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    setMode(button.dataset.mode);
+  });
+});
+
+startMissionButton.addEventListener("click", () => {
+  if (gameState.phase === "menu") {
+    startLoading();
+  }
+});
 
 tankButtons.forEach((button) => {
   button.addEventListener("click", () => {
@@ -431,49 +787,51 @@ canvas.addEventListener("mouseup", () => {
   input.shooting = false;
 });
 
-function drawArena() {
-  ctx.fillStyle = "#0d111c";
-  ctx.fillRect(0, 0, WORLD.width, WORLD.height);
-
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.08)";
-  ctx.lineWidth = 3;
-  ctx.strokeRect(WORLD.padding, WORLD.padding, WORLD.width - WORLD.padding * 2, WORLD.height - WORLD.padding * 2);
-
-  ctx.fillStyle = "#1f2937";
-  obstacles.forEach((obstacle) => {
-    ctx.fillRect(obstacle.x, obstacle.y, obstacle.width, obstacle.height);
-  });
-}
-
-function updateHud() {
-  const aliveEnemies = enemies.filter((enemy) => enemy.isAlive).length;
-  hud.innerHTML = `
-    <strong>${player.label}</strong> — ${player.weapon.label}<br />
-    PV: ${Math.max(0, Math.round(player.health))} / ${player.maxHealth}<br />
-    Ennemis restants : ${aliveEnemies}
-  `;
-}
-
 let lastTime = 0;
 function loop(timestamp) {
   const dt = Math.min(0.033, (timestamp - lastTime) / 1000 || 0);
   lastTime = timestamp;
 
-  player.update(dt);
-  enemies.forEach((enemy) => enemy.update(dt, player));
+  if (gameState.phase === "playing") {
+    gameState.energy = clamp(gameState.energy + dt * 0.25, 0, 1);
+    player.update(dt);
+    enemies.forEach((enemy) => enemy.update(dt, player));
+    bullets.forEach((bullet) => bullet.update(dt));
+  }
 
-  bullets.forEach((bullet) => bullet.update(dt));
   for (let i = bullets.length - 1; i >= 0; i -= 1) {
     if (!bullets[i].isAlive) bullets.splice(i, 1);
   }
 
+  particles.forEach((particle) => particle.update(dt));
+  for (let i = particles.length - 1; i >= 0; i -= 1) {
+    if (particles[i].life <= 0) particles.splice(i, 1);
+  }
+
+  if (gameState.shakeTime > 0) {
+    gameState.shakeTime -= dt;
+  } else {
+    gameState.shakeIntensity = 0;
+  }
+
+  const shakeX = (Math.random() - 0.5) * gameState.shakeIntensity;
+  const shakeY = (Math.random() - 0.5) * gameState.shakeIntensity;
+
+  ctx.save();
+  ctx.translate(shakeX, shakeY);
   drawArena();
+
+  particles.filter((particle) => particle.layer === "behind").forEach((particle) => particle.draw());
   player.draw();
   enemies.forEach((enemy) => enemy.draw());
   bullets.forEach((bullet) => bullet.draw());
+  particles.filter((particle) => particle.layer !== "behind").forEach((particle) => particle.draw());
+  ctx.restore();
 
   updateHud();
   requestAnimationFrame(loop);
 }
 
+setMode(gameState.mode);
+setPhase("menu");
 requestAnimationFrame(loop);

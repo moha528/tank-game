@@ -41,7 +41,96 @@
       </section>
       <section class="game-wrapper">
         <canvas id="game" width="960" height="600" aria-label="Jeu de tank"></canvas>
-        <div class="hud" id="hud"></div>
+        <div class="game-overlay menu" id="main-menu">
+          <div class="menu-frame">
+            <div class="menu-header">
+              <p class="menu-kicker">Hangar tactique</p>
+              <h2>Menu Principal</h2>
+              <p class="menu-subtitle">
+                Préparez vos systèmes, choisissez un mode de jeu et lancez l'opération.
+              </p>
+            </div>
+            <div class="menu-modes" id="mode-options">
+              <button class="mode-card is-active" data-mode="training">
+                <span class="mode-title">Entraînement Sandbox</span>
+                <span class="mode-desc">Terrain libre, objectifs personnalisés, pas de pression.</span>
+              </button>
+              <button class="mode-card" data-mode="bot-battle">
+                <span class="mode-title">Combat Bot</span>
+                <span class="mode-desc">Escarmouche rapide contre des IA tactiques.</span>
+              </button>
+              <button class="mode-card" data-mode="online">
+                <span class="mode-title">En ligne</span>
+                <span class="mode-desc">Batailles classées, synchronisation réseau (à venir).</span>
+              </button>
+            </div>
+            <div class="menu-footer">
+              <div class="menu-info" id="mode-details"></div>
+              <button class="menu-cta" id="start-mission">Lancer la mission</button>
+            </div>
+          </div>
+        </div>
+        <div class="game-overlay loading" id="loading-screen">
+          <div class="loading-card">
+            <div class="spinner"></div>
+            <h3>Chargement des systèmes</h3>
+            <p id="loading-status">Calibration des moteurs...</p>
+            <div class="loading-bar">
+              <div class="loading-progress" id="loading-progress"></div>
+            </div>
+          </div>
+        </div>
+        <div class="hud" id="hud">
+          <div class="hud-top">
+            <div class="hud-card">
+              <p class="hud-label">Mode</p>
+              <p class="hud-value" id="hud-mode">Entraînement Sandbox</p>
+              <p class="hud-muted" id="hud-objective">Déployez-vous et testez vos armes.</p>
+            </div>
+            <div class="hud-card">
+              <p class="hud-label">Systèmes</p>
+              <p class="hud-value" id="hud-systems">Boucliers actifs</p>
+              <div class="hud-pills">
+                <span class="pill">Radar</span>
+                <span class="pill">Munitions</span>
+                <span class="pill">IA</span>
+              </div>
+            </div>
+            <div class="hud-card">
+              <p class="hud-label">Combat</p>
+              <p class="hud-value" id="hud-enemies">Ennemis : 0</p>
+              <p class="hud-muted" id="hud-wave">Vague 1 / 3</p>
+            </div>
+          </div>
+          <div class="hud-bottom">
+            <div class="hud-bar">
+              <span>Intégrité</span>
+              <div class="bar">
+                <div class="bar-fill" id="health-bar"></div>
+              </div>
+            </div>
+            <div class="hud-bar">
+              <span>Énergie arme</span>
+              <div class="bar">
+                <div class="bar-fill energy" id="energy-bar"></div>
+              </div>
+            </div>
+            <div class="hud-readouts">
+              <div>
+                <p class="hud-label">Tank</p>
+                <p class="hud-value" id="hud-tank">Scout</p>
+              </div>
+              <div>
+                <p class="hud-label">Arme</p>
+                <p class="hud-value" id="hud-weapon">Canon</p>
+              </div>
+              <div>
+                <p class="hud-label">Score</p>
+                <p class="hud-value" id="hud-score">0</p>
+              </div>
+            </div>
+          </div>
+        </div>
       </section>
     </main>
     <script type="module" src="js/game.js"></script>
