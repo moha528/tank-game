@@ -11,6 +11,11 @@ const loadingScreen = document.querySelector("#loading-screen");
 const pauseMenu = document.querySelector("#pause-menu");
 const resumeMissionButton = document.querySelector("#resume-mission");
 const exitMissionButton = document.querySelector("#exit-mission");
+const hangarPanel = document.querySelector("#hangar-panel");
+const openHangarButton = document.querySelector("#open-hangar");
+const closeHangarButton = document.querySelector("#close-hangar");
+const hangarTabs = document.querySelectorAll(".hangar-tab");
+const hangarSections = document.querySelectorAll(".hangar-section");
 const loadingStatus = document.querySelector("#loading-status");
 const loadingProgress = document.querySelector("#loading-progress");
 const hudMode = document.querySelector("#hud-mode");
@@ -253,6 +258,7 @@ const gameState = {
 
 let selectedTank = "scout";
 let selectedWeapon = "cannon";
+let lastPhaseBeforeHangar = "playing";
 
 const AMMO_PACK = 12;
 
@@ -849,7 +855,8 @@ function setPhase(phase) {
   loadingScreen.classList.toggle("is-active", phase === "loading");
   pauseMenu.classList.toggle("is-active", phase === "paused");
   endScreen.classList.toggle("is-active", phase === "end");
-  hud.classList.toggle("is-active", phase === "playing" || phase === "paused");
+  hangarPanel.classList.toggle("is-active", phase === "hangar");
+  hud.classList.toggle("is-active", phase === "playing" || phase === "paused" || phase === "hangar");
   if (phase !== "playing") {
     input.keys.clear();
     input.shooting = false;
@@ -956,6 +963,27 @@ function togglePause() {
   } else if (gameState.phase === "paused") {
     setPhase("playing");
   }
+}
+
+function openHangar() {
+  if (["loading", "end"].includes(gameState.phase)) return;
+  lastPhaseBeforeHangar = gameState.phase === "hangar" ? "playing" : gameState.phase;
+  setPhase("hangar");
+}
+
+function closeHangar() {
+  if (gameState.phase !== "hangar") return;
+  const nextPhase = lastPhaseBeforeHangar === "hangar" ? "playing" : lastPhaseBeforeHangar;
+  setPhase(nextPhase);
+}
+
+function setHangarTab(tabKey) {
+  hangarTabs.forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.tab === tabKey);
+  });
+  hangarSections.forEach((section) => {
+    section.classList.toggle("is-active", section.dataset.tab === tabKey);
+  });
 }
 
 function drawArena() {
@@ -1180,6 +1208,14 @@ exitMissionButton.addEventListener("click", () => {
   returnToMenu();
 });
 
+openHangarButton.addEventListener("click", () => {
+  openHangar();
+});
+
+closeHangarButton.addEventListener("click", () => {
+  closeHangar();
+});
+
 restartMissionButton.addEventListener("click", () => {
   if (gameState.phase === "end") {
     startLoading();
@@ -1190,6 +1226,12 @@ backToMenuButton.addEventListener("click", () => {
   if (gameState.phase === "end") {
     returnToMenu();
   }
+});
+
+hangarTabs.forEach((button) => {
+  button.addEventListener("click", () => {
+    setHangarTab(button.dataset.tab);
+  });
 });
 
 tankButtons.forEach((button) => {
@@ -1217,6 +1259,10 @@ weaponButtons.forEach((button) => {
 
 window.addEventListener("keydown", (event) => {
   if (event.code === "Escape") {
+    if (gameState.phase === "hangar") {
+      closeHangar();
+      return;
+    }
     togglePause();
     return;
   }
@@ -1329,6 +1375,7 @@ function loop(timestamp) {
 }
 
 setMode(gameState.mode);
+setHangarTab("loadout");
 setPhase("menu");
 updateShop();
 renderLeaderboard();
