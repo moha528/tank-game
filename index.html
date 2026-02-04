@@ -34,6 +34,7 @@
               <li>Déplacement : ZQSD / WASD / Flèches</li>
               <li>Tirer : Espace</li>
               <li>Changer d'arme : 1 / 2</li>
+              <li>Pause / reprise : Échap</li>
               <li>Changer de tank : boutons ci-dessus</li>
             </ul>
           </div>
@@ -77,6 +78,19 @@
             <p id="loading-status">Calibration des moteurs...</p>
             <div class="loading-bar">
               <div class="loading-progress" id="loading-progress"></div>
+            </div>
+          </div>
+        </div>
+        <div class="game-overlay pause" id="pause-menu">
+          <div class="menu-frame">
+            <div class="menu-header">
+              <p class="menu-kicker">Opération suspendue</p>
+              <h2>Pause</h2>
+              <p class="menu-subtitle">Respirez, ajustez votre stratégie et relancez quand vous êtes prêt.</p>
+            </div>
+            <div class="menu-actions">
+              <button class="menu-cta" id="resume-mission">Reprendre</button>
+              <button class="menu-cta ghost" id="exit-mission">Retour au menu</button>
             </div>
           </div>
         </div>
